@@ -9,6 +9,7 @@ router.post("/reqres", controller.reqResetPassword);
 router.post("/verifresotp", controller.verifResetPass);
 router.post("/resetpass", controller.resetPassword);
 router.post("/refreshtoken", controller.refreshToken);
+router.post("/logout", controller.logout);
 
 router.patch("/penalty", controller.checkPenalty);
 router.get("/email", controller.getEmailDomain);

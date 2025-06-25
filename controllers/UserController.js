@@ -7,25 +7,52 @@ const moment = require("moment");
 const { hashPassword, validatePassword } = require("../middleware/hashpass");
 const convertTZ = require("../helper/helper");
 
+const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 1 week in ms
+
 const UserController = {
   refreshToken: async (req, res) => {
-    const refreshToken = req.body?.refreshToken;
-    const payload = {
-      name: req.body.name,
-      username: req.body.username,
-      email: req.body.email,
-    };
-    if (refreshToken === undefined) {
-      res.status(403).send({
-        message: "Unauthorized",
-      });
+    const refreshToken = req.cookies?.refresh_token;
+    if (!refreshToken) {
+      return res.status(401).send({ message: "No refresh token" });
     }
-    const newAccessToken = jwt.sign(payload, process.env.SECRETJWT, {
-      expiresIn: "10s",
-    });
-    res.status(200).send({
-      accessToken: newAccessToken,
-    });
+    const Client = new DbConn();
+    const client = await Client.initConnection();
+    try {
+      await client.beginTransaction();
+      // Find user with this refresh token
+      const userRes = await client.query(
+        "SELECT * FROM mst_user WHERE refresh_token = ?",
+        [refreshToken]
+      );
+      if (userRes[0].length === 0) {
+        throw new Error("Invalid refresh token");
+      }
+      const user = userRes[0][0];
+      // Check expiry
+      if (
+        !user.refresh_token_expiry_at ||
+        new Date(user.refresh_token_expiry_at) < new Date()
+      ) {
+        throw new Error("Refresh token expired");
+      }
+      // Issue new access token
+      const payload = {
+        email: user.email,
+        username: user.username,
+        name: user.nama,
+        id_user: user.id_user,
+      };
+      const newAccessToken = jwt.sign(payload, process.env.SECRETJWT, {
+        expiresIn: "30s",
+      });
+      res.status(200).send({ accessToken: newAccessToken });
+      await client.commit();
+    } catch (error) {
+      await client.rollback();
+      res.status(401).send({ message: error.message });
+    } finally {
+      client.release();
+    }
   },
 
   loginUser: async (req, res) => {
@@ -47,13 +74,16 @@ const UserController = {
         throw new Error("User not found");
       }
       const data = checkUserData[0][0];
+
+      console.log(data, "data");
       if (req.body?.subscription) {
         const subscription = JSON.parse(req.body.subscription);
-        const checkUserSub = await client.query("SELECT id FROM notif_sub WHERE endpoint_sub = ?", [
-          subscription.sub.endpoint,
-        ]);
+        const checkUserSub = await client.query(
+          "SELECT id FROM notif_sub WHERE endpoint_sub = ?",
+          [subscription.sub.endpoint]
+        );
         if (checkUserSub[0].length !== 0) {
-          const deleteSub = await client.query("DELETE FROM notif_sub where endpoint_sub = ?", [
+          await client.query("DELETE FROM notif_sub where endpoint_sub = ?", [
             subscription.sub.endpoint,
           ]);
         }
@@ -64,12 +94,17 @@ const UserController = {
           subscription.sub.keys.auth,
           moment(now).format(),
         ];
-        let insertNotifSub = await client.query(
+        await client.query(
           "INSERT INTO notif_sub(id_user, endpoint_sub, p256dh_sub, auth_sub, created_date) VALUES(?,?,?,?,?)",
           dataNotifSub
         );
       }
-      await client.commit();
+      // Validate password
+      const validate = await validatePassword(password, data.password);
+      if (!validate) {
+        return res.status(400).send({ message: "Password not valid" });
+      }
+      // Generate tokens
       const refreshToken = jwt.sign(
         {
           email: data.email,
@@ -78,7 +113,7 @@ const UserController = {
           id_user: data.id_user,
         },
         process.env.SECRETJWT,
-        { expiresIn: "6h" }
+        { expiresIn: "7d" }
       );
       const accessToken = jwt.sign(
         {
@@ -88,40 +123,69 @@ const UserController = {
           id_user: data.id_user,
         },
         process.env.SECRETJWT,
-        { expiresIn: "5m" }
+        { expiresIn: "30s" }
       );
-      if (checkUserData[0].length > 0) {
-        const validate = await validatePassword(password, data.password);
-        if (!validate) {
-          res.status(400).send({
-            message: "Password not valid",
-          });
-        } else {
-          res.status(200).send({
-            message: `Success sign in, welcome ${data.nama}`,
-            data: {
-              name: data.username,
-              email: data.email,
-              id_user: data.id_user,
-              role_id: data.role_id,
-              accessToken: accessToken,
-              refreshToken: refreshToken,
-            },
-          });
-        }
-      } else {
-        res.status(400).send({
-          message: "User not found",
-        });
-      }
+      // Store refresh token and expiry in DB
+      const expiryDate = new Date(Date.now() + REFRESH_TOKEN_EXPIRY);
+      await client.query(
+        "UPDATE mst_user SET refresh_token = ?, refresh_token_expiry_at = ? WHERE id_user = ?",
+        [refreshToken, expiryDate, data.id_user]
+      );
+      await client.commit();
+      // Set refresh token as HttpOnly cookie
+      res.cookie("refresh_token", refreshToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+        expires: expiryDate,
+      });
+      // Return access token and user info (no refresh token)
+      res.status(200).send({
+        message: `Success sign in, welcome ${data.nama}`,
+        data: {
+          name: data.nama,
+          email: data.email,
+          id_user: data.id_user,
+          role_id: data.role_id,
+          accessToken: accessToken,
+        },
+      });
     } catch (error) {
       await client.rollback();
-      console.error(error);
-      res.status(500).send({
-        message: error.message,
-      });
+      res.status(500).send({ message: error.message });
     } finally {
       client.release();
+    }
+  },
+
+  logout: async (req, res) => {
+    try {
+      const refreshToken = req.cookies?.refresh_token;
+      if (!refreshToken) {
+        return res.status(200).send({ message: "Logged out" });
+      }
+      const Client = new DbConn();
+      const client = await Client.initConnection();
+      try {
+        await client.beginTransaction();
+        await client.query(
+          "UPDATE mst_user SET refresh_token = NULL, refresh_token_expiry_at = NULL WHERE refresh_token = ?",
+          [refreshToken]
+        );
+        await client.commit();
+      } catch (error) {
+        await client.rollback();
+      } finally {
+        client.release();
+      }
+      res.clearCookie("refresh_token", {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+      });
+      res.status(200).send({ message: "Logged out" });
+    } catch (error) {
+      res.status(500).send({ message: error.message });
     }
   },
 
@@ -168,7 +232,10 @@ const UserController = {
         otp_code: otpHashed,
         valid_until: validUntil,
       };
-      const [qClean, valClean] = Conn.deleteQuery({ email: email }, "otp_trans");
+      const [qClean, valClean] = Conn.deleteQuery(
+        { email: email },
+        "otp_trans"
+      );
       const [queryOTP, valOTP] = Conn.insertQuery(payloadOtp, "otp_trans");
       const cleanExist = await client.query(qClean, valClean);
       const insertToOTP = await client.query(queryOTP, valOTP);
@@ -201,12 +268,21 @@ const UserController = {
     try {
       const validateOTP = await OTPHandler.validateOTP(otpInput, email);
       await client.beginTransaction();
-      const tempUser = await client.query("SELECT * FROM mst_user_temp where email = ?", [email]);
+      const tempUser = await client.query(
+        "SELECT * FROM mst_user_temp where email = ?",
+        [email]
+      );
       const userData = tempUser[0][0];
       delete userData.id;
       const [qInsert, valIns] = Conn.insertQuery(userData, "mst_user");
-      const [qDelete, valDel] = Conn.deleteQuery({ email: email }, "mst_user_temp");
-      const [qDeleteOTP, valDelOTP] = Conn.deleteQuery({ email: email }, "otp_trans");
+      const [qDelete, valDel] = Conn.deleteQuery(
+        { email: email },
+        "mst_user_temp"
+      );
+      const [qDeleteOTP, valDelOTP] = Conn.deleteQuery(
+        { email: email },
+        "otp_trans"
+      );
       let promises = [
         client.query(qInsert, valIns),
         client.query(qDelete, valDel),
@@ -236,7 +312,10 @@ const UserController = {
     const Mailer = new Emailer();
     const client = await Conn.initConnection();
     try {
-      const checkRegis = await client.query("SELECT * FROM mst_user where email = ?", [email]);
+      const checkRegis = await client.query(
+        "SELECT * FROM mst_user where email = ?",
+        [email]
+      );
       if (checkRegis[0].length === 0) {
         throw new Error("User not registered yet");
       }
@@ -247,7 +326,10 @@ const UserController = {
         valid_until: validUntil,
       };
       await client.beginTransaction();
-      const [qClean, valClean] = Conn.deleteQuery({ email: email }, "otp_trans");
+      const [qClean, valClean] = Conn.deleteQuery(
+        { email: email },
+        "otp_trans"
+      );
       const cleanExist = await client.query(qClean, valClean);
       const [queryOTP, valOTP] = Conn.insertQuery(payload, "otp_trans");
       const insertOTP = await client.query(queryOTP, valOTP);
@@ -302,7 +384,10 @@ const UserController = {
       const Conn = new DbConn();
       const client = await Conn.initConnection();
       await client.beginTransaction();
-      const checkUserexist = await client.query("SELECT * FROM mst_user WHERE email = ? ", [email]);
+      const checkUserexist = await client.query(
+        "SELECT * FROM mst_user WHERE email = ? ",
+        [email]
+      );
       if (checkUserexist[0].length == 0) {
         throw new Error("User not found");
       }
@@ -310,7 +395,11 @@ const UserController = {
       const payload = {
         password: hashedNewPass,
       };
-      const [qUpPass, valUpPass] = Conn.updateQuery(payload, { email: email }, "mst_user");
+      const [qUpPass, valUpPass] = Conn.updateQuery(
+        payload,
+        { email: email },
+        "mst_user"
+      );
       const updatePass = await client.query(qUpPass, valUpPass);
       await client.commit();
       res.status(200).send({
@@ -378,7 +467,7 @@ const UserController = {
       const updateData = await client.query(
         `
         UPDATE mst_user SET penalty_until = null, penalty_ctr = 0
-        WHERE id_user = ? AND penalty_until < CONVERT_TZ(NOW(), '+00:00', '+07:00') 
+        WHERE id_user = ? AND penalty_until < CONVERT_TZ(NOW(), '+00:00', '+07:00')
         `,
         [id_user]
       );
@@ -386,9 +475,9 @@ const UserController = {
         `SELECT penalty_until, penalty_ctr FROM mst_user WHERE id_user = ?`,
         [id_user]
       );
-      console.log(updateData);
-      const pen = select[0][0].penalty_until;
-      const counter = select[0][0].penalty_ctr;
+      console.log(select, "select");
+      const pen = select[0][0]?.penalty_until || null;
+      const counter = select[0][0]?.penalty_ctr || 0;
       let penalty = null;
       if (pen !== null) {
         penalty = moment(pen).format("dddd, DD-MM-YYYY, HH:mm");
