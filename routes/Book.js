@@ -2,8 +2,11 @@ const BookReqController = require("../controllers/BookReqController");
 const BookCheck = require("../middleware/bookcheck");
 const Penalty = require("../middleware/penalty");
 const user = require("../controllers/UserController");
+const AuthToken = require("../middleware/authentication");
 const express = require("express");
 const router = express.Router();
+
+router.use(AuthToken);
 
 router.get("/checkin/:id_user", BookReqController.getCheckInBook);
 router.get("/checkout/:id_user", BookReqController.getCheckOutBook);

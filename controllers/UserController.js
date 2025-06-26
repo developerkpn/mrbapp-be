@@ -11,31 +11,28 @@ const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 1 week in ms
 
 const UserController = {
   refreshToken: async (req, res) => {
-    const refreshToken = req.cookies?.refresh_token;
-    if (!refreshToken) {
-      return res.status(401).send({ message: "No refresh token" });
-    }
     const Client = new DbConn();
     const client = await Client.initConnection();
     try {
       await client.beginTransaction();
-      // Find user with this refresh token
-      const userRes = await client.query(
-        "SELECT * FROM mst_user WHERE refresh_token = ?",
-        [refreshToken]
+      const refreshToken = decodeURIComponent(req.cookies?.refresh_token);
+      const decoded = jwt.verify(refreshToken, process.env.SECRETJWT);
+      const userId = decoded.id_user;
+
+      console.log(userId, "userId");
+
+      const userData = await client.query(
+        "SELECT * FROM mst_user WHERE id_user = ?",
+        [userId]
       );
-      if (userRes[0].length === 0) {
-        throw new Error("Invalid refresh token");
-      }
-      const user = userRes[0][0];
-      // Check expiry
+      const user = userData[0][0];
       if (
         !user.refresh_token_expiry_at ||
         new Date(user.refresh_token_expiry_at) < new Date()
       ) {
         throw new Error("Refresh token expired");
       }
-      // Issue new access token
+
       const payload = {
         email: user.email,
         username: user.username,
@@ -104,7 +101,6 @@ const UserController = {
       if (!validate) {
         return res.status(400).send({ message: "Password not valid" });
       }
-      // Generate tokens
       const refreshToken = jwt.sign(
         {
           email: data.email,
@@ -115,6 +111,7 @@ const UserController = {
         process.env.SECRETJWT,
         { expiresIn: "7d" }
       );
+
       const accessToken = jwt.sign(
         {
           email: data.email,
@@ -125,21 +122,28 @@ const UserController = {
         process.env.SECRETJWT,
         { expiresIn: "30s" }
       );
-      // Store refresh token and expiry in DB
       const expiryDate = new Date(Date.now() + REFRESH_TOKEN_EXPIRY);
       await client.query(
         "UPDATE mst_user SET refresh_token = ?, refresh_token_expiry_at = ? WHERE id_user = ?",
         [refreshToken, expiryDate, data.id_user]
       );
+
+      const returningUser = await client.query(
+        "SELECT refresh_token FROM mst_user WHERE id_user = ?",
+        [data.id_user]
+      );
+
+      console.log(refreshToken, "refreshToken");
+      console.log(returningUser[0][0].refresh_token, "returningUser");
+
       await client.commit();
-      // Set refresh token as HttpOnly cookie
-      res.cookie("refresh_token", refreshToken, {
+
+      res.cookie("refresh_token", encodeURIComponent(refreshToken), {
         httpOnly: true,
         secure: true,
-        sameSite: "strict",
-        expires: expiryDate,
+        sameSite: "lax",
       });
-      // Return access token and user info (no refresh token)
+
       res.status(200).send({
         message: `Success sign in, welcome ${data.nama}`,
         data: {
@@ -181,7 +185,7 @@ const UserController = {
       res.clearCookie("refresh_token", {
         httpOnly: true,
         secure: true,
-        sameSite: "strict",
+        sameSite: "lax",
       });
       res.status(200).send({ message: "Logged out" });
     } catch (error) {

@@ -1,5 +1,8 @@
 const DbConn = require("../helper/DbTransaction");
 const db = require("../config/db");
+const { formidable } = require("formidable");
+const fs = require("fs");
+const path = require("path");
 
 const RoomController = {
   getAllRoom: async (req, res) => {
@@ -36,7 +39,7 @@ const RoomController = {
         promise.push(
           client.query(
             `SELECT MF.nama from fas_room FR LEFT JOIN mst_fas MF
-        ON FR.id_fasilitas = MF.id_fasilitas 
+        ON FR.id_fasilitas = MF.id_fasilitas
         WHERE id_ruangan = ?`,
             item.id_ruangan
           )
@@ -66,27 +69,27 @@ const RoomController = {
         throw Error("parameter is empty");
       }
       const getroom = await client.query(
-        `SELECT 
-            id, 
-            id_ruangan, 
-            kapasitas, 
-            nama, 
+        `SELECT
+            id,
+            id_ruangan,
+            kapasitas,
+            nama,
             lokasi,
             image
-          FROM 
-            mst_room 
-          WHERE 
+          FROM
+            mst_room
+          WHERE
             id_ruangan NOT IN (
-              SELECT 
-                id_ruangan 
-              FROM 
-                req_book 
-              WHERE 
+              SELECT
+                id_ruangan
+              FROM
+                req_book
+              WHERE
                 (
-                  CONVERT_TZ(CURTIME(), '+00:00', '+07:00') BETWEEN time_start 
-                  AND time_end 
-                  OR DATE_ADD(CONVERT_TZ(NOW(), '+00:00', '+07:00'), INTERVAL ? HOUR) BETWEEN time_start 
-                  AND time_end 
+                  CONVERT_TZ(CURTIME(), '+00:00', '+07:00') BETWEEN time_start
+                  AND time_end
+                  OR DATE_ADD(CONVERT_TZ(NOW(), '+00:00', '+07:00'), INTERVAL ? HOUR) BETWEEN time_start
+                  AND time_end
                   AND book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
                 )
             )
@@ -99,7 +102,7 @@ const RoomController = {
       rooms.forEach((item) => {
         promise.push(
           client.query(`SELECT MF.nama from fas_room FR LEFT JOIN mst_fas MF
-          ON fr.id_fasilitas = MF.id_fasilitas 
+          ON fr.id_fasilitas = MF.id_fasilitas
           WHERE id_ruangan = '${item.id_ruangan}'`)
         );
       });
@@ -144,7 +147,7 @@ const RoomController = {
 		      AND mst_room.is_active = 'T'
           AND mst_room.id_ruangan NOT IN (
             SELECT distinct req_book.id_ruangan
-            FROM 
+            FROM
 					  req_book
             WHERE
 					  req_book.book_date = ?
@@ -203,6 +206,223 @@ const RoomController = {
     } catch (error) {
       console.error(error);
       res.status(500).send(error);
+    } finally {
+      client.release();
+    }
+  },
+
+  createRoom: async (req, res) => {
+    const Client = new DbConn();
+    const client = await Client.initConnection();
+
+    try {
+      // Create upload directory if it doesn't exist
+      const uploadDir = path.join(__dirname, "../public/room_photo");
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      // Parse the form data
+      const form = formidable({
+        uploadDir: uploadDir,
+        keepExtensions: true,
+        maxFileSize: 10 * 1024 * 1024, // 10MB limit
+        filter: ({ mimetype }) => {
+          // Only allow image files
+          return mimetype && mimetype.includes("image");
+        },
+      });
+
+      const [fields, files] = await form.parse(req);
+
+      // Extract field values (formidable returns arrays)
+      const data = {
+        nama: fields.nama?.[0],
+        kapasitas: parseInt(fields.kapasitas?.[0]),
+        lokasi: fields.lokasi?.[0],
+        category: fields.category?.[0],
+        is_active: fields.is_active?.[0] || "T",
+      };
+
+      await client.beginTransaction();
+
+      // Generate automatic room ID
+      const getLastRoom = await client.query(
+        `SELECT id_ruangan FROM mst_room
+         WHERE id_ruangan REGEXP '^ROOM[0-9]+LT[0-9]+$'
+         ORDER BY CAST(SUBSTRING(id_ruangan, 5, LOCATE('LT', id_ruangan) - 5) AS UNSIGNED) DESC
+         LIMIT 1`
+      );
+
+      let nextNumber = 1;
+      if (getLastRoom[0].length > 0) {
+        const lastId = getLastRoom[0][0].id_ruangan;
+        const numberPart = lastId.match(/ROOM(\d+)LT/);
+        if (numberPart) {
+          nextNumber = parseInt(numberPart[1]) + 1;
+        }
+      }
+
+      // Default floor to 46 if not provided, or extract from location
+      let floor = "46";
+      if (data.lokasi && data.lokasi.match(/\d+/)) {
+        const floorMatch = data.lokasi.match(/\d+/);
+        floor = floorMatch[0];
+      }
+
+      const generatedId = `ROOM${nextNumber}LT${floor}`;
+
+      // Handle image upload
+      let imagePath = null;
+      if (files.image && files.image[0]) {
+        const imageFile = files.image[0];
+        const fileExtension = path.extname(imageFile.originalFilename);
+        const newFileName = `${generatedId}${fileExtension}`;
+        const newFilePath = path.join(uploadDir, newFileName);
+
+        // Move the uploaded file to the final location with room ID as filename
+        fs.renameSync(imageFile.filepath, newFilePath);
+
+        // Store full URL instead of relative path
+        const baseUrl =
+          process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
+        imagePath = `${baseUrl}/be-api/static/room_photo/${newFileName}`;
+      }
+
+      await client.query(
+        `INSERT INTO mst_room (id_ruangan, nama, kapasitas, lokasi, category, image, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          generatedId,
+          data.nama,
+          data.kapasitas,
+          data.lokasi,
+          data.category,
+          imagePath,
+          data.is_active,
+        ]
+      );
+
+      await client.commit();
+      res.status(201).send({
+        message: "Room created successfully",
+        id_ruangan: generatedId,
+        image_path: imagePath,
+      });
+    } catch (error) {
+      await client.rollback();
+      console.error("Error creating room:", error);
+      res.status(500).send({ message: error.message });
+    } finally {
+      client.release();
+    }
+  },
+
+  updateRoom: async (req, res) => {
+    const Client = new DbConn();
+    const client = await Client.initConnection();
+    const id = req.params.id_ruangan;
+
+    try {
+      // Create upload directory if it doesn't exist
+      const uploadDir = path.join(__dirname, "../public/room_photo");
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      // Parse the form data
+      const form = formidable({
+        uploadDir: uploadDir,
+        keepExtensions: true,
+        maxFileSize: 10 * 1024 * 1024, // 10MB limit
+        filter: ({ mimetype }) => {
+          // Only allow image files
+          return mimetype && mimetype.includes("image");
+        },
+      });
+
+      const [fields, files] = await form.parse(req);
+
+      // Extract field values (formidable returns arrays)
+      const data = {
+        nama: fields.nama?.[0],
+        kapasitas: parseInt(fields.kapasitas?.[0]),
+        lokasi: fields.lokasi?.[0],
+        category: fields.category?.[0],
+        is_active: fields.is_active?.[0] || "T",
+      };
+
+      await client.beginTransaction();
+
+      // Get current room data to check for existing image
+      const currentRoom = await client.query(
+        `SELECT image FROM mst_room WHERE id_ruangan = ?`,
+        [id]
+      );
+
+      // Handle image upload
+      let imagePath = currentRoom[0][0]?.image; // Keep existing image by default
+      if (files.image && files.image[0]) {
+        // Delete old image if it exists and is a local file
+        if (imagePath && imagePath.includes("/be-api/static/room_photo/")) {
+          const fileName = imagePath.split("/").pop();
+          const oldImagePath = path.join(uploadDir, fileName);
+          if (fs.existsSync(oldImagePath)) {
+            fs.unlinkSync(oldImagePath);
+          }
+        }
+
+        const imageFile = files.image[0];
+        const fileExtension = path.extname(imageFile.originalFilename);
+        const newFileName = `${id}${fileExtension}`;
+        const newFilePath = path.join(uploadDir, newFileName);
+
+        // Move the uploaded file to the final location with room ID as filename
+        fs.renameSync(imageFile.filepath, newFilePath);
+
+        // Store full URL instead of relative path
+        const baseUrl =
+          process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
+        imagePath = `${baseUrl}/be-api/static/room_photo/${newFileName}`;
+      }
+
+      await client.query(
+        `UPDATE mst_room SET nama = ?, kapasitas = ?, lokasi = ?, category = ?, image = ?, is_active = ? WHERE id_ruangan = ?`,
+        [
+          data.nama,
+          data.kapasitas,
+          data.lokasi,
+          data.category,
+          imagePath,
+          data.is_active,
+          id,
+        ]
+      );
+      await client.commit();
+      res.status(200).send({
+        message: "Room updated successfully",
+        image_path: imagePath,
+      });
+    } catch (error) {
+      await client.rollback();
+      console.error("Error updating room:", error);
+      res.status(500).send({ message: error.message });
+    } finally {
+      client.release();
+    }
+  },
+
+  deleteRoom: async (req, res) => {
+    const Client = new DbConn();
+    const client = await Client.initConnection();
+    const id = req.params.id_ruangan;
+    try {
+      await client.beginTransaction();
+      await client.query(`DELETE FROM mst_room WHERE id_ruangan = ?`, [id]);
+      await client.commit();
+      res.status(200).send({ message: "Room deleted" });
+    } catch (error) {
+      await client.rollback();
+      res.status(500).send({ message: error.message });
     } finally {
       client.release();
     }

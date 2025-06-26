@@ -11,7 +11,7 @@ const AuthToken = async (req, res, next) => {
   } else {
     try {
       if (token !== undefined) {
-        decode = jwt.verify(token, process.env.TOKEN_KEY);
+        decode = jwt.verify(token, process.env.SECRETJWT);
       } else {
         const exception = new Error();
         exception.name = "Unauthorized";
@@ -23,7 +23,7 @@ const AuthToken = async (req, res, next) => {
         };
         throw exception;
       }
-      req.useridSess = decode.id;
+      req.useridSess = decode.id_user;
       next();
     } catch (err) {
       if (err?.response?.status === 401) {
