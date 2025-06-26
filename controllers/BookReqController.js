@@ -38,47 +38,146 @@ const BookReqController = {
 
     const id_book = uuid.uuid();
     const id_notif = uuid.uuid();
-    const payload = {
-      id_ruangan: data.id_ruangan,
-      id_user: data.id_user,
-      created_at: today,
-      book_date: data.book_date,
-      time_start: data.time_start,
-      time_end: data.time_end,
-      agenda: data.agenda,
-      prtcpt_ctr: data.participant,
-      remark: data.remark,
-      category: data.category,
-      id_book: id_book,
-      is_active: "T",
-      id_notif: id_notif,
-      approval: "pending",
-      check_in: "F",
-      check_out: "F",
-    };
 
     try {
       await client.beginTransaction();
+
+      // ATOMIC AVAILABILITY CHECK - within the same transaction
+      const isBooked = await client.query(
+        `SELECT
+          id_ruangan,
+          DATE_FORMAT(book_date, '%Y-%m-%d') as book_date,
+          DATE_FORMAT(time_start, '%H:%i') as time_start,
+          DATE_FORMAT(time_end, '%H:%i') as time_end
+        FROM
+          req_book
+        WHERE
+          id_ruangan = ?
+          AND book_date = ?
+          AND is_active = 'T'
+          AND (
+            (req_book.time_start < ? AND req_book.time_end > ?)
+          )
+        FOR UPDATE`, // Add FOR UPDATE to lock the rows during transaction
+        [data.id_ruangan, data.book_date, data.time_end, data.time_start]
+      );
+
+      // If room is already booked, send rejection email and fail
+      if (isBooked[0].length > 0) {
+        await client.rollback();
+
+        // Get user info for rejection email
+        const userInfo = await client.query(
+          "SELECT email, username FROM mst_user WHERE id_user = ?",
+          [data.id_user]
+        );
+
+        const rejectionData = {
+          email: userInfo[0][0].email,
+          username: userInfo[0][0].username,
+          approval: "rejected",
+          reject_note: `The room ${data.id_ruangan} is already booked for the requested time slot. Please choose a different time or room.`,
+          agenda: data.agenda,
+          remark: data.remark,
+          ruangan: data.id_ruangan, // Map id_ruangan to ruangan for email template
+          book_date: data.book_date,
+          time_start: data.time_start,
+          time_end: data.time_end,
+          capacity: data.participant, // Map participant to capacity for email template
+        };
+
+        // Send rejection email to user
+        const Email = new Emailer();
+        await Email.approvalNotif(rejectionData);
+
+        return res.status(400).send({
+          message: `${data.id_ruangan} is already booked for this time slot`,
+          booked: isBooked[0],
+        });
+      }
+
+      // Room is available - create booking immediately as approved
+      const payload = {
+        id_ruangan: data.id_ruangan,
+        id_user: data.id_user,
+        created_at: today,
+        book_date: data.book_date,
+        time_start: data.time_start,
+        time_end: data.time_end,
+        agenda: data.agenda,
+        prtcpt_ctr: data.participant,
+        remark: data.remark,
+        category: data.category,
+        id_book: id_book,
+        is_active: "T",
+        id_notif: id_notif,
+        approval: "approved", // IMMEDIATELY APPROVED - no pending status
+        check_in: "F",
+        check_out: "F",
+      };
+
       const [query, value] = await Client.insertQuery(payload, "req_book");
       await client.query(query, value);
-      console.log(query);
-      const n = await client.query("SELECT nama FROM mst_user WHERE id_user = ?", [
-        payload.id_user,
-      ]);
+
+      const n = await client.query(
+        "SELECT nama FROM mst_user WHERE id_user = ?",
+        [payload.id_user]
+      );
       Object.defineProperty(payload, "nama", { value: n[0][0].nama });
-      const q = await client.query("SELECT id_ticket FROM req_book where id_book = ?", [id_book]);
+
+      const q = await client.query(
+        "SELECT id_ticket FROM req_book where id_book = ?",
+        [id_book]
+      );
       const id_ticket = q[0][0].id_ticket;
+
+      // Commit the transaction first to ensure booking is saved
+      await client.commit();
+
+      // Set up notifications since booking is immediately approved
+      const bookDate = moment(
+        new Date(`${data.book_date} ${data.time_start}`)
+      ).subtract(15, "m");
+      await Notif.CreateNewCron(
+        bookDate,
+        "Meeting Check In Reminder",
+        "Please check in for agenda: " + data.agenda,
+        data.id_user,
+        id_book,
+        id_notif
+      );
+      await Notif.CreateNewCronMail(bookDate, payload);
+
+      // Send confirmation email to user (not admin notification)
+      const userEmail = await client.query(
+        "SELECT email, username FROM mst_user WHERE id_user = ?",
+        [payload.id_user]
+      );
+      const userData = {
+        email: userEmail[0][0].email,
+        username: userEmail[0][0].username,
+        approval: "approved",
+        agenda: payload.agenda,
+        remark: payload.remark,
+        ruangan: payload.id_ruangan, // Map id_ruangan to ruangan for email template
+        book_date: payload.book_date,
+        time_start: payload.time_start,
+        time_end: payload.time_end,
+        capacity: payload.prtcpt_ctr, // Map prtcpt_ctr to capacity for email template
+      };
+
       const Email = new Emailer();
-      await Email.newBooking(payload, id_ticket);
+      await Email.approvalNotif(userData); // Send approved notification to user
+
       res.status(200).send({
-        message: "Room Booked",
+        message: "Room booked successfully! No approval needed.",
         id_ticket: id_ticket,
+        status: "approved",
       });
-      client.commit();
     } catch (error) {
       console.log(error);
+      await client.rollback();
       res.status(500).send({ message: error.message });
-      client.rollback();
     } finally {
       client.release();
     }
@@ -118,6 +217,67 @@ const BookReqController = {
       if (!id_book) {
         throw Error("Request Error");
       }
+      // Check availability for the new time slot (excluding current booking)
+      const isBooked = await client.query(
+        `SELECT
+          id_ruangan,
+          DATE_FORMAT(book_date, '%Y-%m-%d') as book_date,
+          DATE_FORMAT(time_start, '%H:%i') as time_start,
+          DATE_FORMAT(time_end, '%H:%i') as time_end
+        FROM
+          req_book
+        WHERE
+          id_ruangan = ?
+          AND book_date = ?
+          AND is_active = 'T'
+          AND id_book != ?
+          AND (
+            (req_book.time_start < ? AND req_book.time_end > ?)
+          )
+        FOR UPDATE`,
+        [
+          data.id_ruangan,
+          data.book_date,
+          id_book,
+          data.time_end,
+          data.time_start,
+        ]
+      );
+
+      // If new time slot is already booked, send rejection email and fail
+      if (isBooked[0].length > 0) {
+        await client.rollback();
+
+        // Get user info for rejection email
+        const userInfo = await client.query(
+          "SELECT email, username FROM mst_user WHERE id_user = ?",
+          [data.id_user]
+        );
+
+        const rejectionData = {
+          email: userInfo[0][0].email,
+          username: userInfo[0][0].username,
+          approval: "rejected",
+          reject_note: `Cannot update booking: The room ${data.id_ruangan} is already booked for the new requested time slot. Please choose a different time or room.`,
+          agenda: data.agenda,
+          remark: data.remark,
+          ruangan: data.id_ruangan, // Map id_ruangan to ruangan for email template
+          book_date: data.book_date,
+          time_start: data.time_start,
+          time_end: data.time_end,
+          capacity: data.participant, // Map participant to capacity for email template
+        };
+
+        // Send rejection email to user
+        const Email = new Emailer();
+        await Email.approvalNotif(rejectionData);
+
+        return res.status(400).send({
+          message: `${data.id_ruangan} is already booked for this time slot`,
+          booked: isBooked[0],
+        });
+      }
+
       const payload = {
         id_ruangan: data.id_ruangan,
         book_date: data.book_date,
@@ -126,7 +286,7 @@ const BookReqController = {
         agenda: data.agenda,
         prtcpt_ctr: data.participant,
         remark: data.remark,
-        approval: "pending",
+        approval: "approved", // Keep as approved since no manual approval needed
         updated_at: today,
         updated_by: data.id_user,
       };
@@ -139,24 +299,48 @@ const BookReqController = {
       );
       if (notif[0][0]) {
         id_notif = notif[0][0].id_notif;
-        await client.query(`DELETE FROM push_sched WHERE id_req = ?`, [id_book]);
+        await client.query(`DELETE FROM push_sched WHERE id_req = ?`, [
+          id_book,
+        ]);
         global.scheduledTasks.delete(id_notif);
       }
-      const [query, value] = Client.updateQuery(payload, { id_book: id_book }, "req_book");
+      const [query, value] = Client.updateQuery(
+        payload,
+        { id_book: id_book },
+        "req_book"
+      );
       const updateData = await client.query(query, value);
-      const q = await client.query("SELECT id_ticket from req_book where id_book = ?", [id_book]);
+      const q = await client.query(
+        "SELECT id_ticket from req_book where id_book = ?",
+        [id_book]
+      );
       const id_ticket = q[0][0].id_ticket;
       await client.commit();
 
-      const n = await client.query("SELECT nama FROM mst_user WHERE id_user = ?", [data.id_user]);
-      Object.defineProperty(data, "nama", { value: n[0][0].nama });
+      const userInfo = await client.query(
+        "SELECT nama, email, username FROM mst_user WHERE id_user = ?",
+        [data.id_user]
+      );
+      const userData = {
+        email: userInfo[0][0].email,
+        username: userInfo[0][0].username,
+        approval: "approved",
+        agenda: data.agenda,
+        remark: data.remark,
+        ruangan: data.id_ruangan, // Map id_ruangan to ruangan for email template
+        book_date: data.book_date,
+        time_start: data.time_start,
+        time_end: data.time_end,
+        capacity: data.participant, // Map participant to capacity for email template
+      };
 
       const Email = new Emailer();
-      await Email.editedBooking(data, id_ticket, id_book);
+      await Email.approvalNotif(userData); // Send approved notification to user
 
       res.status(200).send({
-        message: "Book updated",
+        message: "Booking updated successfully! No approval needed.",
         id_ticket: id_ticket,
+        status: "approved",
       });
       console.log(query, value);
       console.log(updateData);
@@ -207,7 +391,9 @@ const BookReqController = {
       const room = req.query.room || null;
 
       let approvalFilter =
-        approval === "calendar" ? ["approved", "finished", "pending"] : [approval];
+        approval === "calendar"
+          ? ["approved", "finished", "pending"]
+          : [approval];
       let approvalPlaceholders = approvalFilter.map(() => "?").join(",");
 
       const showall = await client.query(
@@ -274,11 +460,11 @@ const BookReqController = {
           TIMESTAMP (
           CONCAT( book_date, ' ', time_end)) AS end_time,
           TIMESTAMP ( TIMESTAMP (
-          CONCAT( book_date, ' ', time_start )) - INTERVAL 15 MINUTE ) AS upcoming_time 
+          CONCAT( book_date, ' ', time_start )) - INTERVAL 15 MINUTE ) AS upcoming_time
         FROM
-        req_book 
-        ) BK 
-        LEFT JOIN mst_room MR ON BK.id_ruangan = MR.id_ruangan 
+        req_book
+        ) BK
+        LEFT JOIN mst_room MR ON BK.id_ruangan = MR.id_ruangan
         WHERE id_user = ?
           AND
             (book_date = ? OR ? IS NULL)
@@ -335,7 +521,9 @@ const BookReqController = {
       const data = req.body.data;
       const id_book = req.params.id_book;
       const id_notif = uuid.uuid();
-      const bookDate = moment(new Date(`${data.book_date} ${data.time_start}`)).subtract(15, "m");
+      const bookDate = moment(
+        new Date(`${data.book_date} ${data.time_start}`)
+      ).subtract(15, "m");
       if (!id_book) {
         throw Error("Request Error");
       }
@@ -345,7 +533,11 @@ const BookReqController = {
       };
       console.log(payload);
       await client.beginTransaction();
-      const [query, value] = Client.updateQuery(payload, { id_book: id_book }, "req_book");
+      const [query, value] = Client.updateQuery(
+        payload,
+        { id_book: id_book },
+        "req_book"
+      );
       const updateData = await client.query(query, value);
       await client.commit();
 
@@ -471,7 +663,7 @@ const BookReqController = {
           id_user = ?
           AND
           is_active = 'T'
-          AND 
+          AND
           check_in = 'F'
           AND
           approval = 'approved'
@@ -479,7 +671,7 @@ const BookReqController = {
           book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
           AND
           CONVERT_TZ(CURTIME(), '+00:00', '+07:00') BETWEEN (time_start - INTERVAL 15 MINUTE) AND (time_start + INTERVAL 15 MINUTE)
-        ) 
+        )
         `,
         [id_user]
       );
@@ -507,7 +699,7 @@ const BookReqController = {
           id_user = ?
           AND
           is_active = 'T'
-          AND 
+          AND
           check_in = 'T'
           AND
           check_out = 'F'

@@ -21,7 +21,7 @@ EmailGen.NotifyApproved = (data) => {
     </tr>
     <tr>
       <td style="width:25%">Remark</td>
-      <td>${data.remark}</td>
+      <td>${data.remark || "-"}</td>
     </tr>
     <tr>
       <td style="width:25%">Room</td>
@@ -66,7 +66,7 @@ EmailGen.NotifyRejected = (data) => {
     </tr>
     <tr>
       <td style="width:25%">Remark</td>
-      <td>${data.remark}</td>
+      <td>${data.remark || "-"}</td>
     </tr>
     <tr>
       <td style="width:25%">Room</td>
@@ -86,7 +86,9 @@ EmailGen.NotifyRejected = (data) => {
     </tr>
   </table>
   <p>Here's some note from administrator:</p>
-  <blockquote style="background: lightGray; padding: 16px">${data.reject_note}</blockquote>
+  <blockquote style="background: lightGray; padding: 16px">${
+    data.reject_note
+  }</blockquote>
   <p>Please create a new booking based on the note above</p>
   <hr />
   <p>Thank you.</p>
