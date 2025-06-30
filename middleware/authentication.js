@@ -2,7 +2,6 @@ const jwt = require("jsonwebtoken");
 
 const AuthToken = async (req, res, next) => {
   let headers = req.headers.Authorization || req.headers.authorization;
-  console.log(req.headers, "headers");
 
   // Check if authorization header exists
   if (!(req.headers.authorization || req.headers.Authorization)) {
@@ -23,7 +22,6 @@ const AuthToken = async (req, res, next) => {
       });
     }
     req.useridSess = decode.id_user;
-    console.log(decode.id_user, "userId");
     next();
   } catch (err) {
     if (err.name == "TokenExpiredError") {

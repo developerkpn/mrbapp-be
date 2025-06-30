@@ -2,6 +2,7 @@ const RoomController = require("../controllers/RoomController");
 const express = require("express");
 const router = express.Router();
 const AuthToken = require("../middleware/authentication");
+const AdminCheck = require("../middleware/admincheck");
 
 router.use(AuthToken);
 
@@ -10,8 +11,8 @@ router.get("/fas", RoomController.getAllRoomWithFac);
 router.get("/avai", RoomController.getAvailableRoomWithParam);
 router.post("/search-avail", RoomController.getAvailableRoom);
 router.get("/:id_ruangan", RoomController.getRoomDetails);
-router.post("/", RoomController.createRoom);
+router.post("/", AdminCheck, RoomController.createRoom);
 router.put("/:id_ruangan", RoomController.updateRoom);
-router.delete("/:id_ruangan", RoomController.deleteRoom);
+router.delete("/:id_ruangan", AdminCheck, RoomController.deleteRoom);
 
 module.exports = router;
