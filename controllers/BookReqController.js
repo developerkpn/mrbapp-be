@@ -401,6 +401,7 @@ const BookReqController = {
         WHERE (req_book.book_date = ? OR ? IS NULL)
         AND (req_book.approval IN (${approvalPlaceholders}) OR ? IS NULL)
         AND (req_book.id_ruangan = ? OR ? IS NULL)
+        AND req_book.is_active = 'T'
         ORDER BY req_book.id DESC`,
         [book_date, book_date, ...approvalFilter, approval, room, room]
       );
