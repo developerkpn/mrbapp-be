@@ -80,6 +80,14 @@ class Mailer {
         subject: `Roomeet - Your meeting is ${data.approval}`,
         html: rejected,
       };
+    } else if (data.approval === "cancelled") {
+      const cancelled = EmailGen.NotifyCancelled(data);
+      setup = {
+        from: process.env.SMTP_USERNAME,
+        to: data.email,
+        subject: `Roomeet - Your meeting has been ${data.approval}`,
+        html: cancelled,
+      };
     }
     try {
       const send = await this.tp.sendMail(setup);

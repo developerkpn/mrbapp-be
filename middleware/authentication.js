@@ -22,6 +22,7 @@ const AuthToken = async (req, res, next) => {
       });
     }
     req.useridSess = decode.id_user;
+    req.roleidSess = decode.role_id;
     next();
   } catch (err) {
     if (err.name == "TokenExpiredError") {

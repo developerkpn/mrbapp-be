@@ -574,34 +574,73 @@ const BookReqController = {
     const Client = new DbConn();
     const client = await Client.initConnection();
     try {
-      const data = req.body.data;
-      const payload = {
-        check_in: "T",
-      };
-      console.log(payload);
+      const { id_user, room_id } = req.body;
+      console.log({ id_user, room_id }, "check-in data");
+
+      if (!id_user || !room_id) {
+        return res.status(400).send({
+          message: "User ID and Room ID are required",
+        });
+      }
+
       await client.beginTransaction();
+
+      // Find active booking for this user in this room today within check-in window
+      const bookingQuery = await client.query(
+        `SELECT * FROM req_book WHERE
+          id_user = ?
+          AND id_ruangan = ?
+          AND is_active = 'T'
+          AND check_in = 'F'
+          AND approval = 'approved'
+          AND book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
+          AND CONVERT_TZ(CURTIME(), '+00:00', '+07:00') BETWEEN (time_start - INTERVAL 15 MINUTE) AND (time_start + INTERVAL 15 MINUTE)`,
+        [id_user, room_id]
+      );
+
+      if (bookingQuery[0].length === 0) {
+        await client.rollback();
+        return res.status(404).send({
+          message:
+            "No valid booking found for check-in. Make sure you have an active booking for this room today within the check-in window (15 minutes before start time).",
+        });
+      }
+
+      const booking = bookingQuery[0][0];
+      const id_book = booking.id_book;
+
+      // Update booking to checked in
+      const payload = { check_in: "T" };
       const [query, value] = Client.updateQuery(
         payload,
-        { id_user: data.id_user, id_book: data.id_book },
+        { id_book: id_book },
         "req_book"
       );
+
       const updateData = await client.query(query, value);
       await client.commit();
+
       console.log(query, value);
-      console.log(updateData[0].changedRows);
+      console.log("Rows affected:", updateData[0].changedRows);
+
       if (updateData[0].changedRows === 1) {
         res.status(200).send({
-          message: "Check in success",
-          id_user: data.id_user,
-          id_book: data.id_book,
+          message: "Check in successful",
+          id_user: id_user,
+          id_book: id_book,
+          room_id: room_id,
+          agenda: booking.agenda,
+          time_start: booking.time_start,
+          time_end: booking.time_end,
         });
       } else {
         res.status(400).send({
-          message: "Bad Request: Payload error",
+          message: "Failed to update check-in status",
         });
       }
     } catch (error) {
       await client.rollback();
+      console.error("Check-in error:", error);
       res.status(500).send({
         message: error.message,
       });
@@ -614,36 +653,80 @@ const BookReqController = {
     const Client = new DbConn();
     const client = await Client.initConnection();
     try {
-      const data = req.body.data;
+      const { id_user, room_id } = req.body;
+      console.log({ id_user, room_id }, "check-out data");
+
+      if (!id_user || !room_id) {
+        return res.status(400).send({
+          message: "User ID and Room ID are required",
+        });
+      }
+
+      await client.beginTransaction();
+
+      // Find active booking for this user in this room today that's checked in but not checked out
+      const bookingQuery = await client.query(
+        `SELECT * FROM req_book WHERE
+          id_user = ?
+          AND id_ruangan = ?
+          AND is_active = 'T'
+          AND check_in = 'T'
+          AND check_out = 'F'
+          AND approval = 'approved'
+          AND book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
+          AND CONVERT_TZ(CURTIME(), '+00:00', '+07:00') > time_start
+          AND CONVERT_TZ(CURTIME(), '+00:00', '+07:00') < time_end + INTERVAL 15 MINUTE`,
+        [id_user, room_id]
+      );
+
+      if (bookingQuery[0].length === 0) {
+        await client.rollback();
+        return res.status(404).send({
+          message:
+            "No valid booking found for check-out. Make sure you have checked in and the meeting is still active (within 15 minutes after end time).",
+        });
+      }
+
+      const booking = bookingQuery[0][0];
+      const id_book = booking.id_book;
+
+      // Update booking to checked out and finished
       const payload = {
         check_out: "T",
         is_active: "F",
         approval: "finished",
       };
-      console.log(payload);
-      await client.beginTransaction();
+
       const [query, value] = Client.updateQuery(
         payload,
-        { id_user: data.id_user, id_book: data.id_book },
+        { id_book: id_book },
         "req_book"
       );
+
       const updateData = await client.query(query, value);
       await client.commit();
+
       console.log(query, value);
-      console.log(updateData[0].changedRows);
+      console.log("Rows affected:", updateData[0].changedRows);
+
       if (updateData[0].changedRows === 1) {
         res.status(200).send({
-          message: "Check out success",
-          id_user: data.id_user,
-          id_book: data.id_book,
+          message: "Check out successful",
+          id_user: id_user,
+          id_book: id_book,
+          room_id: room_id,
+          agenda: booking.agenda,
+          time_start: booking.time_start,
+          time_end: booking.time_end,
         });
       } else {
         res.status(400).send({
-          message: "Bad Request: Payload error",
+          message: "Failed to update check-out status",
         });
       }
     } catch (error) {
       await client.rollback();
+      console.error("Check-out error:", error);
       res.status(500).send({
         message: error.message,
       });
@@ -720,6 +803,97 @@ const BookReqController = {
       res.status(200).send({ data: getBook[0] });
     } catch (error) {
       await client.rollback();
+      res.status(500).send({
+        message: error.message,
+      });
+    } finally {
+      client.release();
+    }
+  },
+
+  cancelBooking: async (req, res) => {
+    const Client = new DbConn();
+    const client = await Client.initConnection();
+    try {
+      const id_book = req.params.id_book;
+      const { cancel_reason } = req.body;
+
+      if (!id_book) {
+        throw new Error("Book ID is required");
+      }
+
+      await client.beginTransaction();
+
+      // Get booking details first
+      const bookingQuery = await client.query(
+        "SELECT req_book.*, mst_user.username, mst_user.email FROM req_book LEFT JOIN mst_user ON req_book.id_user = mst_user.id_user WHERE id_book = ?",
+        [id_book]
+      );
+
+      if (bookingQuery[0].length === 0) {
+        await client.rollback();
+        res.status(404).send({
+          message: "Booking not found",
+        });
+        return;
+      }
+
+      const booking = bookingQuery[0][0];
+
+      // Check if booking can be cancelled (only active bookings)
+      if (booking.is_active !== "T") {
+        await client.rollback();
+        res.status(400).send({
+          message: "Cannot cancel inactive booking",
+        });
+        return;
+      }
+
+      // Update booking to cancelled status
+      const payload = {
+        is_active: "F",
+        approval: "cancelled",
+        reject_note: cancel_reason || "Cancelled by admin",
+      };
+
+      const [query, value] = Client.updateQuery(
+        payload,
+        { id_book: id_book },
+        "req_book"
+      );
+
+      const updateData = await client.query(query, value);
+      await client.commit();
+
+      // Send cancellation email to user
+      const emailData = {
+        email: booking.email,
+        username: booking.username,
+        approval: "cancelled",
+        reject_note:
+          cancel_reason || "Your booking has been cancelled by admin",
+        agenda: booking.agenda,
+        remark: booking.remark,
+        ruangan: booking.id_ruangan,
+        book_date: booking.book_date,
+        time_start: booking.time_start,
+        time_end: booking.time_end,
+        capacity: booking.prtcpt_ctr,
+      };
+
+      console.log(emailData, "emailData");
+
+      const Email = new Emailer();
+      await Email.approvalNotif(emailData);
+
+      res.status(200).send({
+        message: "Booking cancelled successfully",
+        id_book: id_book,
+        cancel_reason: cancel_reason,
+      });
+    } catch (error) {
+      await client.rollback();
+      console.error(error);
       res.status(500).send({
         message: error.message,
       });

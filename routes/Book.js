@@ -2,6 +2,7 @@ const BookReqController = require("../controllers/BookReqController");
 const Penalty = require("../middleware/penalty");
 const user = require("../controllers/UserController");
 const AuthToken = require("../middleware/authentication");
+const AdminCheck = require("../middleware/admincheck");
 const express = require("express");
 const router = express.Router();
 
@@ -13,6 +14,7 @@ router.patch("/checkin", BookReqController.checkIn);
 router.patch("/checkout", BookReqController.checkOut);
 
 router.patch("/approval/:id_book", BookReqController.approval);
+router.patch("/cancel/:id_book", AdminCheck, BookReqController.cancelBooking);
 
 router.post("/", Penalty, BookReqController.createBook);
 router.get("/", BookReqController.showAllBook);

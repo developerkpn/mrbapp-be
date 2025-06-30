@@ -38,6 +38,7 @@ const UserController = {
         username: user.username,
         name: user.nama,
         id_user: user.id_user,
+        role_id: user.role_id,
       };
       const newAccessToken = jwt.sign(payload, process.env.SECRETJWT, {
         expiresIn: "30s",
@@ -107,6 +108,7 @@ const UserController = {
           username: data.username,
           name: data.nama,
           id_user: data.id_user,
+          role_id: data.role_id,
         },
         process.env.SECRETJWT,
         { expiresIn: "7d" }
@@ -118,6 +120,7 @@ const UserController = {
           username: data.username,
           name: data.nama,
           id_user: data.id_user,
+          role_id: data.role_id,
         },
         process.env.SECRETJWT,
         { expiresIn: "30s" }
@@ -132,9 +135,6 @@ const UserController = {
         "SELECT refresh_token FROM mst_user WHERE id_user = ?",
         [data.id_user]
       );
-
-      console.log(refreshToken, "refreshToken");
-      console.log(returningUser[0][0].refresh_token, "returningUser");
 
       await client.commit();
 
