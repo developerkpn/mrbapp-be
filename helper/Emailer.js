@@ -61,7 +61,7 @@ class Mailer {
   }
 
   async approvalNotif(data) {
-    console.log("EMAIL RUNNING");
+    console.log("EMAIL RUNNING for approval:", data.approval, "to:", data.email);
     let setup;
 
     if (data.approval === "approved") {
@@ -81,20 +81,34 @@ class Mailer {
         html: rejected,
       };
     } else if (data.approval === "cancelled") {
-      const cancelled = EmailGen.NotifyCancelled(data);
-      setup = {
-        from: process.env.SMTP_USERNAME,
-        to: data.email,
-        subject: `Roomeet - Your meeting has been ${data.approval}`,
-        html: cancelled,
-      };
+      console.log("Handling cancelled email for:", data.email, "agenda:", data.agenda);
+      try {
+        const cancelled = EmailGen.NotifyCancelled(data);
+        console.log("Generated cancelled email HTML, length:", cancelled.length);
+        setup = {
+          from: process.env.SMTP_USERNAME,
+          to: data.email,
+          subject: `Roomeet - Your meeting has been ${data.approval}`,
+          html: cancelled,
+        };
+        console.log("Email setup created for cancelled booking");
+      } catch (emailGenError) {
+        console.error("Error generating cancelled email HTML:", emailGenError);
+        throw emailGenError;
+      }
     }
+    if (!setup) {
+      console.error("Email setup is undefined! Approval status:", data.approval);
+      throw new Error(`Email setup failed for approval status: ${data.approval}`);
+    }
+    
     try {
+      console.log("Sending email with setup:", setup);
       const send = await this.tp.sendMail(setup);
-      console.log(send);
+      console.log("Email sent successfully:", send);
       return data.email;
     } catch (error) {
-      console.error(error);
+      console.error("Error sending email:", error);
       throw error;
     }
   }
@@ -149,6 +163,7 @@ class Mailer {
       throw error;
     }
   }
+
 }
 
 module.exports = Mailer;

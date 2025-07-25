@@ -190,8 +190,9 @@ const BookReqController = {
       await client.beginTransaction();
       const value = req.params.id_book;
       const query =
-        "SELECT req_book.*, mst_user.username, mst_user.email FROM req_book LEFT JOIN mst_user ON req_book.id_user = mst_user.id_user WHERE id_book = ?";
+        "SELECT req_book.*, mst_user.username, mst_user.email, mst_room.nama as nama_ruangan, mst_room.kapasitas, mst_room.lokasi, mst_room.image FROM req_book LEFT JOIN mst_user ON req_book.id_user = mst_user.id_user LEFT JOIN mst_room ON req_book.id_ruangan = mst_room.id_ruangan WHERE id_book = ?";
       const data = await client.query(query, value);
+      console.log(data, "getbookbyid");
       await client.commit();
       res.status(200).send(data[0][0]);
       console.log(data);
