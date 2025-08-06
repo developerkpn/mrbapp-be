@@ -8,8 +8,17 @@ const RoomController = {
   getAllRoom: async (req, res) => {
     const Client = new DbConn();
     const client = await Client.initConnection();
+    const isVirtual = req.query.is_virtual;
     try {
-      const get = await client.query("SELECT * from mst_room");
+      let query = "SELECT * from mst_room";
+      let params = [];
+      
+      if (isVirtual !== undefined) {
+        query += " WHERE is_virtual = ?";
+        params.push(isVirtual === 'true' ? 'T' : 'F');
+      }
+      
+      const get = await client.query(query, params);
       const rooms = get[0];
       res.status(200).send(rooms);
     } catch (error) {
@@ -24,14 +33,20 @@ const RoomController = {
     const Client = new DbConn();
     const client = await Client.initConnection();
     const id_room = req.query.id_room || null;
+    const isVirtual = req.query.is_virtual;
     try {
-      const getroom = await client.query(
-        `SELECT * from mst_room
+      let query = `SELECT * from mst_room
         LEFT JOIN mst_category
           ON mst_room.category = mst_category.id_category
-        WHERE (id_ruangan = ? OR ? IS NULL)`,
-        [id_room, id_room]
-      );
+        WHERE (id_ruangan = ? OR ? IS NULL)`;
+      let params = [id_room, id_room];
+      
+      if (isVirtual !== undefined) {
+        query += " AND is_virtual = ?";
+        params.push(isVirtual === 'true' ? 'T' : 'F');
+      }
+      
+      const getroom = await client.query(query, params);
       const rooms = getroom[0];
       let roomFac = [];
       let promise = [];
@@ -134,6 +149,7 @@ const RoomController = {
       prtcpt_ctr: data.participant,
       category: data.category,
       id_book: data.id_book ? data.id_book : "",
+      is_virtual: data.is_virtual ? (data.is_virtual === 'true' ? 'T' : 'F') : null,
     };
 
     console.log(payload);
@@ -141,10 +157,11 @@ const RoomController = {
     try {
       await client.beginTransaction();
       const getRoom = await client.query(
-        `SELECT mst_room.id_ruangan, mst_room.nama, mst_room.kapasitas FROM mst_room
+        `SELECT mst_room.id_ruangan, mst_room.nama, mst_room.kapasitas, mst_room.is_virtual, mst_room.zoom_link, mst_room.zoom_meeting_id, mst_room.zoom_passcode FROM mst_room
           WHERE mst_room.kapasitas >= ?
           AND mst_room.category = ?
 		      AND mst_room.is_active = 'T'
+          AND (? IS NULL OR mst_room.is_virtual = ?)
           AND mst_room.id_ruangan NOT IN (
             SELECT distinct req_book.id_ruangan
             FROM
@@ -160,6 +177,8 @@ const RoomController = {
         [
           payload.prtcpt_ctr,
           payload.category,
+          payload.is_virtual,
+          payload.is_virtual,
           payload.book_date,
           payload.id_book,
           payload.time_end,
@@ -242,6 +261,10 @@ const RoomController = {
         lokasi: fields.lokasi?.[0],
         category: fields.category?.[0],
         is_active: fields.is_active?.[0] || "T",
+        is_virtual: fields.is_virtual?.[0] || "F",
+        zoom_link: fields.zoom_link?.[0] || null,
+        zoom_meeting_id: fields.zoom_meeting_id?.[0] || null,
+        zoom_passcode: fields.zoom_passcode?.[0] || null,
       };
 
       await client.beginTransaction();
@@ -290,7 +313,7 @@ const RoomController = {
       }
 
       await client.query(
-        `INSERT INTO mst_room (id_ruangan, nama, kapasitas, lokasi, category, image, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO mst_room (id_ruangan, nama, kapasitas, lokasi, category, image, is_active, is_virtual, zoom_link, zoom_meeting_id, zoom_passcode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           generatedId,
           data.nama,
@@ -299,6 +322,10 @@ const RoomController = {
           data.category,
           imagePath,
           data.is_active,
+          data.is_virtual,
+          data.zoom_link,
+          data.zoom_meeting_id,
+          data.zoom_passcode,
         ]
       );
 
@@ -349,6 +376,10 @@ const RoomController = {
         lokasi: fields.lokasi?.[0],
         category: fields.category?.[0],
         is_active: fields.is_active?.[0] || "T",
+        is_virtual: fields.is_virtual?.[0] || "F",
+        zoom_link: fields.zoom_link?.[0] || null,
+        zoom_meeting_id: fields.zoom_meeting_id?.[0] || null,
+        zoom_passcode: fields.zoom_passcode?.[0] || null,
       };
 
       await client.beginTransaction();
@@ -386,7 +417,7 @@ const RoomController = {
       }
 
       await client.query(
-        `UPDATE mst_room SET nama = ?, kapasitas = ?, lokasi = ?, category = ?, image = ?, is_active = ? WHERE id_ruangan = ?`,
+        `UPDATE mst_room SET nama = ?, kapasitas = ?, lokasi = ?, category = ?, image = ?, is_active = ?, is_virtual = ?, zoom_link = ?, zoom_meeting_id = ?, zoom_passcode = ? WHERE id_ruangan = ?`,
         [
           data.nama,
           data.kapasitas,
@@ -394,6 +425,10 @@ const RoomController = {
           data.category,
           imagePath,
           data.is_active,
+          data.is_virtual,
+          data.zoom_link,
+          data.zoom_meeting_id,
+          data.zoom_passcode,
           id,
         ]
       );
