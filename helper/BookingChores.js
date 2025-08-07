@@ -1,6 +1,7 @@
 //@clean up booking function
 require("dotenv").config({ path: `.env.development` });
 const moment = require("moment");
+const cron = require("node-cron");
 const NotificationManager = require("./NotificationManager");
 const DbConn = require("./DbTransaction");
 const convertTZ = require("./helper");
@@ -77,15 +78,12 @@ BookingChores.Penalty = async () => {
         AND BOOK.approval = 'approved'
         AND BOOK.check_in = 'F';
     `;
-    console.log("Executing email notification query:", emailNotificationQuery);
 
     const emailNotificationResults = await client.query(emailNotificationQuery);
-    const bookingsToEmailAbout = emailNotificationResults[0];
 
-    console.log(`Found ${bookingsToEmailAbout.length} bookings to email about`);
-    if (bookingsToEmailAbout.length > 0) {
-      console.log("First booking details:", bookingsToEmailAbout[0]);
-    }
+    console.log(emailNotificationResults, "emailNotificationResults");
+
+    const bookingsToEmailAbout = emailNotificationResults[0];
 
     // Fetch penalizable bookings
     const penaltyQuery = `
@@ -95,7 +93,7 @@ BookingChores.Penalty = async () => {
         req_book BOOK
       WHERE
         (
-          TIMESTAMP(CONCAT(BOOK.book_date, ' ', BOOK.time_start)) + INTERVAL 15 MINUTE < CONVERT_TZ(NOW(), '+00:00', '+07:00')
+          TIMESTAMP(CONCAT(BOOK.book_date, ' ', BOOK.time_start)) + INTERVAL 15 MINUTE <= CONVERT_TZ(NOW(), '+00:00', '+07:00')
           AND is_active = 'T'
           AND approval = 'approved'
           AND check_in = 'F'
@@ -109,18 +107,15 @@ BookingChores.Penalty = async () => {
         );
     `;
     const penaltyResults = await client.query(penaltyQuery);
+    console.log(penaltyResults, "penaltyResults");
     const penaltyUserRecords = penaltyResults[0];
 
     // Send email notifications for auto-cancelled bookings (before updating the database)
     if (bookingsToEmailAbout.length > 0) {
-      console.log(
-        `Sending auto-cancellation emails for ${bookingsToEmailAbout.length} bookings`
-      );
+      console.log(`Sending auto-cancellation emails for ${bookingsToEmailAbout.length} bookings`);
 
       for (const booking of bookingsToEmailAbout) {
-        console.log(
-          `Processing booking for email: ${booking.agenda} - ${booking.email}`
-        );
+        console.log(`Processing booking for email: ${booking.agenda} - ${booking.email}`);
         if (booking.email) {
           try {
             const emailData = {
@@ -140,14 +135,9 @@ BookingChores.Penalty = async () => {
 
             console.log("About to send email with data:", emailData);
             await mailer.approvalNotif(emailData);
-            console.log(
-              `Auto-cancellation email sent to: ${booking.email} for booking: ${booking.agenda}`
-            );
+            console.log(`Auto-cancellation email sent to: ${booking.email} for booking: ${booking.agenda}`);
           } catch (emailError) {
-            console.error(
-              `Failed to send auto-cancellation email to ${booking.email}:`,
-              emailError
-            );
+            console.error(`Failed to send auto-cancellation email to ${booking.email}:`, emailError);
             // Continue with the process even if email fails
           }
         }
@@ -160,7 +150,7 @@ BookingChores.Penalty = async () => {
         SELECT id_book
         FROM req_book BOOK
         WHERE
-          TIMESTAMP(CONCAT(BOOK.book_date, ' ', BOOK.time_start)) + INTERVAL 15 MINUTE < CONVERT_TZ(NOW(), '+00:00', '+07:00')
+          TIMESTAMP(CONCAT(BOOK.book_date, ' ', BOOK.time_start)) + INTERVAL 15 MINUTE <= CONVERT_TZ(NOW(), '+00:00', '+07:00')
           AND check_in = 'F'
           AND is_active = 'T'
           AND approval = 'approved'
@@ -170,9 +160,7 @@ BookingChores.Penalty = async () => {
       WHERE id_book IN (SELECT id_book FROM selected_books);
     `;
     const updateStatusResults = await client.query(updateStatusQuery);
-    console.log(
-      `Not checked-in bookings updated to finished: ${updateStatusResults[0].affectedRows}`
-    );
+    console.log(`Not checked-in bookings updated to finished: ${updateStatusResults[0].affectedRows}`);
 
     if (penaltyUserRecords.length === 0) {
       return "No user penalty";
@@ -196,9 +184,7 @@ BookingChores.Penalty = async () => {
     await BookingChores.userPenalty(usersToPenalize, client);
 
     await client.commit();
-    console.log(
-      "=== BookingChores.Penalty execution completed successfully ==="
-    );
+    console.log("=== BookingChores.Penalty execution completed successfully ===");
     return "Success: Penalty applied and auto-cancellation emails sent";
   } catch (error) {
     await client.rollback();
@@ -262,24 +248,21 @@ BookingChores.CleanUp = async () => {
   }
 };
 
-setInterval(async () => {
+cron.schedule("* * * * *", async () => {
   const timestamp = new Date().toISOString();
   console.log(`\n=== CRON JOB EXECUTION STARTED at ${timestamp} ===`);
   try {
     const penaltyRes = await BookingChores.Penalty();
-    const cleanUp = await BookingChores.CleanUp();
+    // const cleanUp = await BookingChores.CleanUp();
     await NotificationManager.CleanUpCron();
     console.log("Penalty result:", penaltyRes);
-    console.log("Cleanup result:", cleanUp);
   } catch (error) {
     console.error("CRON JOB ERROR:", error);
   }
-  console.log(
-    `=== CRON JOB EXECUTION COMPLETED at ${new Date().toISOString()} ===\n`
-  );
-}, 60 * 1000);
+  console.log(`=== CRON JOB EXECUTION COMPLETED at ${new Date().toISOString()} ===\n`);
+});
 
-console.log("BookingChores cron job initialized - running every 60 seconds");
+console.log("BookingChores cron job initialized - running every minute");
 
 // setInterval(() => {
 //   console.log("SEND EMAIL");

@@ -15,11 +15,15 @@ const UserController = {
     const client = await Client.initConnection();
     try {
       await client.beginTransaction();
-      const refreshToken = decodeURIComponent(req.cookies?.refresh_token);
-      const decoded = jwt.verify(refreshToken, process.env.SECRETJWT);
+      const refreshToken = req.cookies?.refresh_token;
+      if (!refreshToken) {
+        throw new Error("Refresh token not found");
+      }
+      const decodedRefreshToken = decodeURIComponent(refreshToken);
+      const decoded = jwt.verify(decodedRefreshToken, process.env.SECRETJWT, {
+        ignoreExpiration: true,
+      });
       const userId = decoded.id_user;
-
-      console.log(userId, "userId");
 
       const userData = await client.query(
         "SELECT * FROM mst_user WHERE id_user = ?",
@@ -463,7 +467,7 @@ const UserController = {
   },
 
   checkPenalty: async (req, res) => {
-    const id_user = req.body.id_user;
+    const id_user = req.useridSess;
     const Client = new DbConn();
     const client = await Client.initConnection();
     try {
@@ -496,7 +500,7 @@ const UserController = {
         });
         console.log(`${id_user} penalty finished`);
       } else if (penalty !== null) {
-        res.status(403).send({
+        res.status(400).send({
           message: `You have penalty until ${penalty}`,
           penalty: penalty,
           counter: counter,

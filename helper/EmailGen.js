@@ -302,4 +302,5 @@ EmailGen.reminderMail = (data) => {
 </main>`;
 };
 
+
 module.exports = EmailGen;
