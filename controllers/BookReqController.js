@@ -31,14 +31,14 @@ const BookReqCol = [
 const BookReqController = {
   createBook: async (req, res) => {
     const data = req.body.data;
-    
+
     // Validate required fields
     if (!data.id_ruangan || !data.category || !data.participant) {
       return res.status(400).send({
-        message: "Missing required fields: room ID, category, and participant count are required"
+        message: "Missing required fields: room ID, category, and participant count are required",
       });
     }
-    
+
     const Client = new DbConn();
     const client = await Client.initConnection();
     let today = new Date();
@@ -75,10 +75,7 @@ const BookReqController = {
         await client.rollback();
 
         // Get user info for rejection email
-        const userInfo = await client.query(
-          "SELECT email, username FROM mst_user WHERE id_user = ?",
-          [data.id_user]
-        );
+        const userInfo = await client.query("SELECT email, username FROM mst_user WHERE id_user = ?", [data.id_user]);
 
         const rejectionData = {
           email: userInfo[0][0].email,
@@ -127,25 +124,17 @@ const BookReqController = {
       const [query, value] = await Client.insertQuery(payload, "req_book");
       await client.query(query, value);
 
-      const n = await client.query(
-        "SELECT nama FROM mst_user WHERE id_user = ?",
-        [payload.id_user]
-      );
+      const n = await client.query("SELECT nama FROM mst_user WHERE id_user = ?", [payload.id_user]);
       Object.defineProperty(payload, "nama", { value: n[0][0].nama });
 
-      const q = await client.query(
-        "SELECT id_ticket FROM req_book where id_book = ?",
-        [id_book]
-      );
+      const q = await client.query("SELECT id_ticket FROM req_book where id_book = ?", [id_book]);
       const id_ticket = q[0][0].id_ticket;
 
       // Commit the transaction first to ensure booking is saved
       await client.commit();
 
       // Set up notifications since booking is immediately approved
-      const bookDate = moment(
-        new Date(`${data.book_date} ${data.time_start}`)
-      ).subtract(15, "m");
+      const bookDate = moment(new Date(`${data.book_date} ${data.time_start}`)).subtract(15, "m");
       await Notif.CreateNewCron(
         bookDate,
         "Meeting Check In Reminder",
@@ -157,10 +146,7 @@ const BookReqController = {
       await Notif.CreateNewCronMail(bookDate, payload);
 
       // Send confirmation email to user (not admin notification)
-      const userEmail = await client.query(
-        "SELECT email, username FROM mst_user WHERE id_user = ?",
-        [payload.id_user]
-      );
+      const userEmail = await client.query("SELECT email, username FROM mst_user WHERE id_user = ?", [payload.id_user]);
       const userData = {
         email: userEmail[0][0].email,
         username: userEmail[0][0].username,
@@ -244,13 +230,7 @@ const BookReqController = {
             (req_book.time_start < ? AND req_book.time_end > ?)
           )
         FOR UPDATE`,
-        [
-          data.id_ruangan,
-          data.book_date,
-          id_book,
-          data.time_end,
-          data.time_start,
-        ]
+        [data.id_ruangan, data.book_date, id_book, data.time_end, data.time_start]
       );
 
       // If new time slot is already booked, send rejection email and fail
@@ -258,10 +238,7 @@ const BookReqController = {
         await client.rollback();
 
         // Get user info for rejection email
-        const userInfo = await client.query(
-          "SELECT email, username FROM mst_user WHERE id_user = ?",
-          [data.id_user]
-        );
+        const userInfo = await client.query("SELECT email, username FROM mst_user WHERE id_user = ?", [data.id_user]);
 
         const rejectionData = {
           email: userInfo[0][0].email,
@@ -302,34 +279,21 @@ const BookReqController = {
       await client.beginTransaction();
       console.log("BEFORE", cron.getTasks());
       let id_notif = "";
-      const notif = await client.query(
-        `SELECT id_notif FROM push_sched WHERE id_req = ? AND type = 'push'`,
-        [id_book]
-      );
+      const notif = await client.query(`SELECT id_notif FROM push_sched WHERE id_req = ? AND type = 'push'`, [id_book]);
       if (notif[0][0]) {
         id_notif = notif[0][0].id_notif;
-        await client.query(`DELETE FROM push_sched WHERE id_req = ?`, [
-          id_book,
-        ]);
+        await client.query(`DELETE FROM push_sched WHERE id_req = ?`, [id_book]);
         global.scheduledTasks.delete(id_notif);
       }
-      const [query, value] = Client.updateQuery(
-        payload,
-        { id_book: id_book },
-        "req_book"
-      );
+      const [query, value] = Client.updateQuery(payload, { id_book: id_book }, "req_book");
       const updateData = await client.query(query, value);
-      const q = await client.query(
-        "SELECT id_ticket from req_book where id_book = ?",
-        [id_book]
-      );
+      const q = await client.query("SELECT id_ticket from req_book where id_book = ?", [id_book]);
       const id_ticket = q[0][0].id_ticket;
       await client.commit();
 
-      const userInfo = await client.query(
-        "SELECT nama, email, username FROM mst_user WHERE id_user = ?",
-        [data.id_user]
-      );
+      const userInfo = await client.query("SELECT nama, email, username FROM mst_user WHERE id_user = ?", [
+        data.id_user,
+      ]);
       const userData = {
         email: userInfo[0][0].email,
         username: userInfo[0][0].username,
@@ -399,10 +363,7 @@ const BookReqController = {
       const approval = req.query.approval || null;
       const room = req.query.room || null;
 
-      let approvalFilter =
-        approval === "calendar"
-          ? ["approved", "finished", "pending"]
-          : [approval];
+      let approvalFilter = approval === "calendar" ? ["approved", "finished", "pending"] : [approval];
       let approvalPlaceholders = approvalFilter.map(() => "?").join(",");
 
       const showall = await client.query(
@@ -514,10 +475,7 @@ const BookReqController = {
       if (roomId === undefined) {
         throw Error("Request Error");
       }
-      const get = await client.query(
-        "SELECT * FROM req_book where id_ruangan = ? and is_active = 'F'",
-        [roomId]
-      );
+      const get = await client.query("SELECT * FROM req_book where id_ruangan = ? and is_active = 'F'", [roomId]);
       const books = get[0];
       res.status(200).send({ data: books });
     } catch (error) {
@@ -535,9 +493,7 @@ const BookReqController = {
       const data = req.body.data;
       const id_book = req.params.id_book;
       const id_notif = uuid.uuid();
-      const bookDate = moment(
-        new Date(`${data.book_date} ${data.time_start}`)
-      ).subtract(15, "m");
+      const bookDate = moment(new Date(`${data.book_date} ${data.time_start}`)).subtract(15, "m");
       if (!id_book) {
         throw Error("Request Error");
       }
@@ -547,11 +503,7 @@ const BookReqController = {
       };
       console.log(payload);
       await client.beginTransaction();
-      const [query, value] = Client.updateQuery(
-        payload,
-        { id_book: id_book },
-        "req_book"
-      );
+      const [query, value] = Client.updateQuery(payload, { id_book: id_book }, "req_book");
       const updateData = await client.query(query, value);
       await client.commit();
 
@@ -624,11 +576,7 @@ const BookReqController = {
 
       // Update booking to checked in
       const payload = { check_in: "T" };
-      const [query, value] = Client.updateQuery(
-        payload,
-        { id_book: id_book },
-        "req_book"
-      );
+      const [query, value] = Client.updateQuery(payload, { id_book: id_book }, "req_book");
 
       const updateData = await client.query(query, value);
       await client.commit();
@@ -687,8 +635,7 @@ const BookReqController = {
           AND check_out = 'F'
           AND approval = 'approved'
           AND book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
-          AND CONVERT_TZ(CURTIME(), '+00:00', '+07:00') > time_start
-          AND CONVERT_TZ(CURTIME(), '+00:00', '+07:00') < time_end + INTERVAL 15 MINUTE`,
+          AND CONVERT_TZ(CURTIME(), '+00:00', '+07:00') < time_start`,
         [id_user, room_id]
       );
 
@@ -710,11 +657,7 @@ const BookReqController = {
         approval: "finished",
       };
 
-      const [query, value] = Client.updateQuery(
-        payload,
-        { id_book: id_book },
-        "req_book"
-      );
+      const [query, value] = Client.updateQuery(payload, { id_book: id_book }, "req_book");
 
       const updateData = await client.query(query, value);
       await client.commit();
@@ -869,11 +812,7 @@ const BookReqController = {
         reject_note: cancel_reason || "Cancelled by admin",
       };
 
-      const [query, value] = Client.updateQuery(
-        payload,
-        { id_book: id_book },
-        "req_book"
-      );
+      const [query, value] = Client.updateQuery(payload, { id_book: id_book }, "req_book");
 
       const updateData = await client.query(query, value);
       await client.commit();
@@ -883,8 +822,7 @@ const BookReqController = {
         email: booking.email,
         username: booking.username,
         approval: "cancelled",
-        reject_note:
-          cancel_reason || "Your booking has been cancelled by admin",
+        reject_note: cancel_reason || "Your booking has been cancelled by admin",
         agenda: booking.agenda,
         remark: booking.remark,
         ruangan: booking.id_ruangan,
