@@ -25,15 +25,9 @@ const UserController = {
       });
       const userId = decoded.id_user;
 
-      const userData = await client.query(
-        "SELECT * FROM mst_user WHERE id_user = ?",
-        [userId]
-      );
+      const userData = await client.query("SELECT * FROM mst_user WHERE id_user = ?", [userId]);
       const user = userData[0][0];
-      if (
-        !user.refresh_token_expiry_at ||
-        new Date(user.refresh_token_expiry_at) < new Date()
-      ) {
+      if (!user.refresh_token_expiry_at || new Date(user.refresh_token_expiry_at) < new Date()) {
         throw new Error("Refresh token expired");
       }
 
@@ -43,6 +37,7 @@ const UserController = {
         name: user.nama,
         id_user: user.id_user,
         role_id: user.role_id,
+        role_name: user.role_name,
       };
       const newAccessToken = jwt.sign(payload, process.env.SECRETJWT, {
         expiresIn: "30s",
@@ -69,7 +64,9 @@ const UserController = {
         now = convertTZ(now, "Asia/Jakarta");
       }
       const checkUserData = await client.query(
-        "SELECT email, username, password, nama, id_user, role_id FROM mst_user where username = ? or email = ?",
+        `SELECT email, username, password, nama, id_user, mu.role_id, mr.role_name FROM mst_user mu
+        left join mst_role mr on mr.role_id = mu.role_id
+        where username = ? or email = ?`,
         [emailoruname, emailoruname]
       );
       if (checkUserData[0].length === 0) {
@@ -80,14 +77,11 @@ const UserController = {
       console.log(data, "data");
       if (req.body?.subscription) {
         const subscription = JSON.parse(req.body.subscription);
-        const checkUserSub = await client.query(
-          "SELECT id FROM notif_sub WHERE endpoint_sub = ?",
-          [subscription.sub.endpoint]
-        );
+        const checkUserSub = await client.query("SELECT id FROM notif_sub WHERE endpoint_sub = ?", [
+          subscription.sub.endpoint,
+        ]);
         if (checkUserSub[0].length !== 0) {
-          await client.query("DELETE FROM notif_sub where endpoint_sub = ?", [
-            subscription.sub.endpoint,
-          ]);
+          await client.query("DELETE FROM notif_sub where endpoint_sub = ?", [subscription.sub.endpoint]);
         }
         let dataNotifSub = [
           data.id_user,
@@ -113,6 +107,7 @@ const UserController = {
           name: data.nama,
           id_user: data.id_user,
           role_id: data.role_id,
+          role_name: data.role_name,
         },
         process.env.SECRETJWT,
         { expiresIn: "7d" }
@@ -125,20 +120,19 @@ const UserController = {
           name: data.nama,
           id_user: data.id_user,
           role_id: data.role_id,
+          role_name: data.role_name,
         },
         process.env.SECRETJWT,
         { expiresIn: "30s" }
       );
       const expiryDate = new Date(Date.now() + REFRESH_TOKEN_EXPIRY);
-      await client.query(
-        "UPDATE mst_user SET refresh_token = ?, refresh_token_expiry_at = ? WHERE id_user = ?",
-        [refreshToken, expiryDate, data.id_user]
-      );
+      await client.query("UPDATE mst_user SET refresh_token = ?, refresh_token_expiry_at = ? WHERE id_user = ?", [
+        refreshToken,
+        expiryDate,
+        data.id_user,
+      ]);
 
-      const returningUser = await client.query(
-        "SELECT refresh_token FROM mst_user WHERE id_user = ?",
-        [data.id_user]
-      );
+      const returningUser = await client.query("SELECT refresh_token FROM mst_user WHERE id_user = ?", [data.id_user]);
 
       await client.commit();
 
@@ -155,6 +149,7 @@ const UserController = {
           email: data.email,
           id_user: data.id_user,
           role_id: data.role_id,
+          role_name: data.role_name,
           accessToken: accessToken,
         },
       });
@@ -216,17 +211,14 @@ const UserController = {
     try {
       await client.beginTransaction();
       //check if existing validated
-      const existValid = await Conn.select(
-        "SELECT * FROM mst_user where username = ? or email = ?",
-        [username, email]
-      );
+      const existValid = await Conn.select("SELECT * FROM mst_user where username = ? or email = ?", [username, email]);
       if (existValid[0].length > 0) {
         throw new Error("User already existed");
       }
-      const existInvalid = await Conn.select(
-        "SELECT * FROM mst_user_temp where username = ? or email = ?",
-        [username, email]
-      );
+      const existInvalid = await Conn.select("SELECT * FROM mst_user_temp where username = ? or email = ?", [
+        username,
+        email,
+      ]);
       if (!existInvalid[0].length > 0) {
         const [query, val] = Conn.insertQuery(payload, "mst_user_temp");
         const insertToTemp = await client.query(query, val);
@@ -240,10 +232,7 @@ const UserController = {
         otp_code: otpHashed,
         valid_until: validUntil,
       };
-      const [qClean, valClean] = Conn.deleteQuery(
-        { email: email },
-        "otp_trans"
-      );
+      const [qClean, valClean] = Conn.deleteQuery({ email: email }, "otp_trans");
       const [queryOTP, valOTP] = Conn.insertQuery(payloadOtp, "otp_trans");
       const cleanExist = await client.query(qClean, valClean);
       const insertToOTP = await client.query(queryOTP, valOTP);
@@ -276,21 +265,12 @@ const UserController = {
     try {
       const validateOTP = await OTPHandler.validateOTP(otpInput, email);
       await client.beginTransaction();
-      const tempUser = await client.query(
-        "SELECT * FROM mst_user_temp where email = ?",
-        [email]
-      );
+      const tempUser = await client.query("SELECT * FROM mst_user_temp where email = ?", [email]);
       const userData = tempUser[0][0];
       delete userData.id;
       const [qInsert, valIns] = Conn.insertQuery(userData, "mst_user");
-      const [qDelete, valDel] = Conn.deleteQuery(
-        { email: email },
-        "mst_user_temp"
-      );
-      const [qDeleteOTP, valDelOTP] = Conn.deleteQuery(
-        { email: email },
-        "otp_trans"
-      );
+      const [qDelete, valDel] = Conn.deleteQuery({ email: email }, "mst_user_temp");
+      const [qDeleteOTP, valDelOTP] = Conn.deleteQuery({ email: email }, "otp_trans");
       let promises = [
         client.query(qInsert, valIns),
         client.query(qDelete, valDel),
@@ -320,10 +300,7 @@ const UserController = {
     const Mailer = new Emailer();
     const client = await Conn.initConnection();
     try {
-      const checkRegis = await client.query(
-        "SELECT * FROM mst_user where email = ?",
-        [email]
-      );
+      const checkRegis = await client.query("SELECT * FROM mst_user where email = ?", [email]);
       if (checkRegis[0].length === 0) {
         throw new Error("User not registered yet");
       }
@@ -334,10 +311,7 @@ const UserController = {
         valid_until: validUntil,
       };
       await client.beginTransaction();
-      const [qClean, valClean] = Conn.deleteQuery(
-        { email: email },
-        "otp_trans"
-      );
+      const [qClean, valClean] = Conn.deleteQuery({ email: email }, "otp_trans");
       const cleanExist = await client.query(qClean, valClean);
       const [queryOTP, valOTP] = Conn.insertQuery(payload, "otp_trans");
       const insertOTP = await client.query(queryOTP, valOTP);
@@ -392,10 +366,7 @@ const UserController = {
       const Conn = new DbConn();
       const client = await Conn.initConnection();
       await client.beginTransaction();
-      const checkUserexist = await client.query(
-        "SELECT * FROM mst_user WHERE email = ? ",
-        [email]
-      );
+      const checkUserexist = await client.query("SELECT * FROM mst_user WHERE email = ? ", [email]);
       if (checkUserexist[0].length == 0) {
         throw new Error("User not found");
       }
@@ -403,11 +374,7 @@ const UserController = {
       const payload = {
         password: hashedNewPass,
       };
-      const [qUpPass, valUpPass] = Conn.updateQuery(
-        payload,
-        { email: email },
-        "mst_user"
-      );
+      const [qUpPass, valUpPass] = Conn.updateQuery(payload, { email: email }, "mst_user");
       const updatePass = await client.query(qUpPass, valUpPass);
       await client.commit();
       res.status(200).send({
@@ -479,10 +446,7 @@ const UserController = {
         `,
         [id_user]
       );
-      const select = await client.query(
-        `SELECT penalty_until, penalty_ctr FROM mst_user WHERE id_user = ?`,
-        [id_user]
-      );
+      const select = await client.query(`SELECT penalty_until, penalty_ctr FROM mst_user WHERE id_user = ?`, [id_user]);
       console.log(select, "select");
       const pen = select[0][0]?.penalty_until || null;
       const counter = select[0][0]?.penalty_ctr || 0;

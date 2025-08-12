@@ -1,6 +1,6 @@
 const dotenv = require("dotenv");
 dotenv.config({
-  path: `./.env.${process.env.NODE_ENV}`,
+  path: `./${process.env.NODE_ENV}.env`,
 });
 const express = require("express");
 const os = require("os");
@@ -50,6 +50,6 @@ NotificationManager.CleanUpCron();
 //   console.log(`App running on ${process.env.PORT}`);
 // });
 
-const server = https.createServer(servOption, app).listen(port, () => {
+const server = https.createServer(servOption, app).listen(port, "0.0.0.0", () => {
   console.log(`App running on ${port}`);
 });
