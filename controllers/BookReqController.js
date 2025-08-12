@@ -31,6 +31,14 @@ const BookReqCol = [
 const BookReqController = {
   createBook: async (req, res) => {
     const data = req.body.data;
+    
+    // Validate required fields
+    if (!data.id_ruangan || !data.category || !data.participant) {
+      return res.status(400).send({
+        message: "Missing required fields: room ID, category, and participant count are required"
+      });
+    }
+    
     const Client = new DbConn();
     const client = await Client.initConnection();
     let today = new Date();

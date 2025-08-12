@@ -3,6 +3,7 @@ const db = require("../config/db");
 const { formidable } = require("formidable");
 const fs = require("fs");
 const path = require("path");
+const QRCode = require("qrcode");
 
 const RoomController = {
   getAllRoom: async (req, res) => {
@@ -19,7 +20,10 @@ const RoomController = {
       }
       
       const get = await client.query(query, params);
-      const rooms = get[0];
+      const rooms = get[0].map(room => ({
+        ...room,
+        image: room.image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`
+      }));
       res.status(200).send(rooms);
     } catch (error) {
       console.error(error);
@@ -63,7 +67,11 @@ const RoomController = {
       const dataGet = await Promise.all(promise);
       rooms.forEach((item, index) => {
         const fac = dataGet[index][0].map((item) => item.nama);
-        roomFac.push({ ...item, fasilitas: fac });
+        roomFac.push({ 
+          ...item, 
+          fasilitas: fac,
+          image: item.image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`
+        });
       });
       res.status(200).send({ data: roomFac });
     } catch (error) {
@@ -124,7 +132,11 @@ const RoomController = {
       const dataGet = await Promise.all(promise);
       rooms.forEach((item, index) => {
         const fac = dataGet[index][0].map((item) => item.nama);
-        roomFac.push({ ...item, fasilitas: fac });
+        roomFac.push({ 
+          ...item, 
+          fasilitas: fac,
+          image: item.image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`
+        });
       });
       res.status(200).send({ data: roomFac });
     } catch (error) {
@@ -149,19 +161,29 @@ const RoomController = {
       prtcpt_ctr: data.participant,
       category: data.category,
       id_book: data.id_book ? data.id_book : "",
-      is_virtual: data.is_virtual ? (data.is_virtual === 'true' ? 'T' : 'F') : null,
+      is_virtual: data.is_virtual !== undefined ? (data.is_virtual === 'true' ? 'T' : 'F') : null,
     };
 
-    console.log(payload);
+    console.log("getAvailableRoom payload:", payload);
+    console.log("Filtering for virtual rooms:", payload.is_virtual);
 
     try {
       await client.beginTransaction();
-      const getRoom = await client.query(
-        `SELECT mst_room.id_ruangan, mst_room.nama, mst_room.kapasitas, mst_room.is_virtual, mst_room.zoom_link, mst_room.zoom_meeting_id, mst_room.zoom_passcode FROM mst_room
+      
+      // Build dynamic WHERE clause for better control
+      let virtualFilter = "";
+      let params = [payload.prtcpt_ctr, payload.category];
+      
+      if (payload.is_virtual !== null) {
+        virtualFilter = "AND mst_room.is_virtual = ?";
+        params.push(payload.is_virtual);
+      }
+      
+      const query = `SELECT mst_room.id_ruangan, mst_room.nama, mst_room.kapasitas, mst_room.is_virtual, mst_room.zoom_link, mst_room.zoom_meeting_id, mst_room.zoom_passcode FROM mst_room
           WHERE mst_room.kapasitas >= ?
           AND mst_room.category = ?
 		      AND mst_room.is_active = 'T'
-          AND (? IS NULL OR mst_room.is_virtual = ?)
+          ${virtualFilter}
           AND mst_room.id_ruangan NOT IN (
             SELECT distinct req_book.id_ruangan
             FROM
@@ -173,22 +195,36 @@ const RoomController = {
               (req_book.time_start < ? AND req_book.time_end > ?)
 					  )
           )
-          ORDER BY mst_room.kapasitas`,
-        [
-          payload.prtcpt_ctr,
-          payload.category,
-          payload.is_virtual,
-          payload.is_virtual,
-          payload.book_date,
-          payload.id_book,
-          payload.time_end,
-          payload.time_start,
-        ]
+          ORDER BY mst_room.kapasitas`;
+      
+      // Add remaining parameters
+      params.push(payload.book_date, payload.id_book, payload.time_end, payload.time_start);
+      
+      console.log("SQL Query:", query);
+      console.log("Parameters:", params);
+      
+      const getRoom = await client.query(query, params
       );
       await client.commit();
+      
+      console.log("Available rooms found:", getRoom[0].length, "rooms");
+      getRoom[0].forEach(room => {
+        console.log(`Room: ${room.id_ruangan}, Virtual: ${room.is_virtual}, Name: ${room.nama}`);
+      });
+      
+      // Add placeholder image for rooms without images and ensure consistent data
+      const roomsWithPlaceholder = getRoom[0].map(room => ({
+        ...room,
+        image: room.image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`,
+        nama: room.nama || 'Room Name',
+        lokasi: room.lokasi || 'Location',
+        is_virtual_display: room.is_virtual === 'T' ? 'Virtual' : 'Physical',
+        room_type_badge: room.is_virtual === 'T' ? 'virtual' : 'physical'
+      }));
+      
       res.status(200).send({
         message: "Success get avail room",
-        data: getRoom[0],
+        data: roomsWithPlaceholder,
       });
     } catch (error) {
       await client.rollback();
@@ -220,7 +256,10 @@ const RoomController = {
         WHERE mst_room.id_ruangan = ?`,
         [id]
       );
-      const room = get[0][0];
+      const room = {
+        ...get[0][0],
+        image: get[0][0].image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`
+      };
       res.status(200).send(room);
     } catch (error) {
       console.error(error);
@@ -460,6 +499,81 @@ const RoomController = {
       res.status(500).send({ message: error.message });
     } finally {
       client.release();
+    }
+  },
+
+  generateQRCode: async (req, res) => {
+    const id_ruangan = req.params.id_ruangan;
+    const qrCodeDir = path.join(__dirname, "../public/qrcode");
+    const qrCodePath = path.join(qrCodeDir, `${id_ruangan}.png`);
+
+    try {
+      // Check if room exists
+      const Client = new DbConn();
+      const client = await Client.initConnection();
+      
+      const roomCheck = await client.query(
+        `SELECT id_ruangan FROM mst_room WHERE id_ruangan = ?`,
+        [id_ruangan]
+      );
+      
+      if (roomCheck[0].length === 0) {
+        client.release();
+        return res.status(404).send({ message: "Room not found" });
+      }
+      
+      client.release();
+
+      // Create QR code directory if it doesn't exist
+      if (!fs.existsSync(qrCodeDir)) {
+        fs.mkdirSync(qrCodeDir, { recursive: true });
+      }
+
+      // Generate QR code with room ID
+      await QRCode.toFile(qrCodePath, id_ruangan, {
+        errorCorrectionLevel: 'H',
+        type: 'png',
+        quality: 0.92,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        },
+        width: 256
+      });
+
+      // Return the generated QR code as response
+      res.sendFile(qrCodePath);
+      
+    } catch (error) {
+      console.error("Error generating QR code:", error);
+      res.status(500).send({ message: error.message });
+    }
+  },
+
+  checkQRCodeExists: async (req, res) => {
+    const id_ruangan = req.params.id_ruangan;
+    const qrCodePath = path.join(__dirname, "../public/qrcode", `${id_ruangan}.png`);
+
+    try {
+      const exists = fs.existsSync(qrCodePath);
+      
+      if (exists) {
+        const baseUrl = process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
+        const qrCodeUrl = `${baseUrl}/be-api/static/qrcode/${id_ruangan}.png`;
+        res.status(200).send({ 
+          exists: true, 
+          qr_code_url: qrCodeUrl 
+        });
+      } else {
+        res.status(200).send({ 
+          exists: false, 
+          qr_code_url: null 
+        });
+      }
+    } catch (error) {
+      console.error("Error checking QR code:", error);
+      res.status(500).send({ message: error.message });
     }
   },
 };
