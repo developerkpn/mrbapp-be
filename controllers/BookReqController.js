@@ -538,7 +538,7 @@ const BookReqController = {
     const Client = new DbConn();
     const client = await Client.initConnection();
     try {
-      const { id_user, room_id } = req.body;
+      const { id_user, room_id } = req.body.data;
       console.log({ id_user, room_id }, "check-in data");
 
       if (!id_user || !room_id) {
@@ -613,7 +613,7 @@ const BookReqController = {
     const Client = new DbConn();
     const client = await Client.initConnection();
     try {
-      const { id_user, room_id } = req.body;
+      const { id_user, room_id } = req.body.data;
       console.log({ id_user, room_id }, "check-out data");
 
       if (!id_user || !room_id) {
@@ -633,8 +633,7 @@ const BookReqController = {
           AND check_in = 'T'
           AND check_out = 'F'
           AND approval = 'approved'
-          AND book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
-          AND CONVERT_TZ(CURTIME(), '+00:00', '+07:00') < time_start`,
+        `,
         [id_user, room_id]
       );
 
@@ -698,18 +697,26 @@ const BookReqController = {
       await client.beginTransaction();
       const getBook = await client.query(
         `
-        SELECT * FROM req_book WHERE (
-          id_user = ?
+        SELECT
+          req_book.*,
+          mst_room.is_virtual,
+          mst_room.zoom_link,
+          mst_room.zoom_meeting_id,
+          mst_room.zoom_passcode
+        FROM req_book
+        LEFT JOIN mst_room ON req_book.id_ruangan = mst_room.id_ruangan
+        WHERE (
+          req_book.id_user = ?
           AND
-          is_active = 'T'
+          req_book.is_active = 'T'
           AND
-          check_in = 'F'
+          req_book.check_in = 'F'
           AND
-          approval = 'approved'
+          req_book.approval = 'approved'
           AND
-          book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
+          req_book.book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
           AND
-          CONVERT_TZ(CURTIME(), '+00:00', '+07:00') BETWEEN (time_start - INTERVAL 15 MINUTE) AND (time_start + INTERVAL 15 MINUTE)
+          CONVERT_TZ(CURTIME(), '+00:00', '+07:00') BETWEEN (req_book.time_start - INTERVAL 15 MINUTE) AND (req_book.time_start + INTERVAL 15 MINUTE)
         )
         `,
         [id_user]
@@ -734,22 +741,30 @@ const BookReqController = {
       await client.beginTransaction();
       const getBook = await client.query(
         `
-        SELECT * FROM req_book WHERE (
-          id_user = ?
+        SELECT
+          req_book.*,
+          mst_room.is_virtual,
+          mst_room.zoom_link,
+          mst_room.zoom_meeting_id,
+          mst_room.zoom_passcode
+        FROM req_book
+        LEFT JOIN mst_room ON req_book.id_ruangan = mst_room.id_ruangan
+        WHERE (
+          req_book.id_user = ?
           AND
-          is_active = 'T'
+          req_book.is_active = 'T'
           AND
-          check_in = 'T'
+          req_book.check_in = 'T'
           AND
-          check_out = 'F'
+          req_book.check_out = 'F'
           AND
-          approval = 'approved'
+          req_book.approval = 'approved'
           AND
-          book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
+          req_book.book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
           AND
-          CONVERT_TZ(CURTIME(), '+00:00', '+07:00') > time_start
+          CONVERT_TZ(CURTIME(), '+00:00', '+07:00') > req_book.time_start
           AND
-          CONVERT_TZ(CURTIME(), '+00:00', '+07:00') < time_end + INTERVAL 15 MINUTE
+          CONVERT_TZ(CURTIME(), '+00:00', '+07:00') < req_book.time_end + INTERVAL 15 MINUTE
         );
         `,
         [id_user]

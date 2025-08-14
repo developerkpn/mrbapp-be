@@ -13,16 +13,16 @@ const RoomController = {
     try {
       let query = "SELECT * from mst_room";
       let params = [];
-      
+
       if (isVirtual !== undefined) {
         query += " WHERE is_virtual = ?";
-        params.push(isVirtual === 'true' ? 'T' : 'F');
+        params.push(isVirtual === "true" ? "T" : "F");
       }
-      
+
       const get = await client.query(query, params);
-      const rooms = get[0].map(room => ({
+      const rooms = get[0].map((room) => ({
         ...room,
-        image: room.image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`
+        image: room.image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
       }));
       res.status(200).send(rooms);
     } catch (error) {
@@ -44,12 +44,12 @@ const RoomController = {
           ON mst_room.category = mst_category.id_category
         WHERE (id_ruangan = ? OR ? IS NULL)`;
       let params = [id_room, id_room];
-      
+
       if (isVirtual !== undefined) {
         query += " AND is_virtual = ?";
-        params.push(isVirtual === 'true' ? 'T' : 'F');
+        params.push(isVirtual === "true" ? "T" : "F");
       }
-      
+
       const getroom = await client.query(query, params);
       const rooms = getroom[0];
       let roomFac = [];
@@ -67,10 +67,10 @@ const RoomController = {
       const dataGet = await Promise.all(promise);
       rooms.forEach((item, index) => {
         const fac = dataGet[index][0].map((item) => item.nama);
-        roomFac.push({ 
-          ...item, 
+        roomFac.push({
+          ...item,
           fasilitas: fac,
-          image: item.image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`
+          image: item.image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
         });
       });
       res.status(200).send({ data: roomFac });
@@ -132,10 +132,10 @@ const RoomController = {
       const dataGet = await Promise.all(promise);
       rooms.forEach((item, index) => {
         const fac = dataGet[index][0].map((item) => item.nama);
-        roomFac.push({ 
-          ...item, 
+        roomFac.push({
+          ...item,
           fasilitas: fac,
-          image: item.image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`
+          image: item.image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
         });
       });
       res.status(200).send({ data: roomFac });
@@ -161,7 +161,7 @@ const RoomController = {
       prtcpt_ctr: data.participant,
       category: data.category,
       id_book: data.id_book ? data.id_book : "",
-      is_virtual: data.is_virtual !== undefined ? (data.is_virtual === 'true' ? 'T' : 'F') : null,
+      is_virtual: data.is_virtual !== undefined ? (data.is_virtual === true ? "T" : "F") : null,
     };
 
     console.log("getAvailableRoom payload:", payload);
@@ -169,16 +169,16 @@ const RoomController = {
 
     try {
       await client.beginTransaction();
-      
+
       // Build dynamic WHERE clause for better control
       let virtualFilter = "";
       let params = [payload.prtcpt_ctr, payload.category];
-      
+
       if (payload.is_virtual !== null) {
         virtualFilter = "AND mst_room.is_virtual = ?";
         params.push(payload.is_virtual);
       }
-      
+
       const query = `SELECT mst_room.id_ruangan, mst_room.nama, mst_room.kapasitas, mst_room.is_virtual, mst_room.zoom_link, mst_room.zoom_meeting_id, mst_room.zoom_passcode FROM mst_room
           WHERE mst_room.kapasitas >= ?
           AND mst_room.category = ?
@@ -196,32 +196,28 @@ const RoomController = {
 					  )
           )
           ORDER BY mst_room.kapasitas`;
-      
+
       // Add remaining parameters
       params.push(payload.book_date, payload.id_book, payload.time_end, payload.time_start);
-      
-      console.log("SQL Query:", query);
-      console.log("Parameters:", params);
-      
-      const getRoom = await client.query(query, params
-      );
+
+      const getRoom = await client.query(query, params);
       await client.commit();
-      
+
       console.log("Available rooms found:", getRoom[0].length, "rooms");
-      getRoom[0].forEach(room => {
+      getRoom[0].forEach((room) => {
         console.log(`Room: ${room.id_ruangan}, Virtual: ${room.is_virtual}, Name: ${room.nama}`);
       });
-      
+
       // Add placeholder image for rooms without images and ensure consistent data
-      const roomsWithPlaceholder = getRoom[0].map(room => ({
+      const roomsWithPlaceholder = getRoom[0].map((room) => ({
         ...room,
-        image: room.image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`,
-        nama: room.nama || 'Room Name',
-        lokasi: room.lokasi || 'Location',
-        is_virtual_display: room.is_virtual === 'T' ? 'Virtual' : 'Physical',
-        room_type_badge: room.is_virtual === 'T' ? 'virtual' : 'physical'
+        image: room.image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
+        nama: room.nama || "Room Name",
+        lokasi: room.lokasi || "Location",
+        is_virtual_display: room.is_virtual === "T" ? "Virtual" : "Physical",
+        room_type_badge: room.is_virtual === "T" ? "virtual" : "physical",
       }));
-      
+
       res.status(200).send({
         message: "Success get avail room",
         data: roomsWithPlaceholder,
@@ -258,7 +254,7 @@ const RoomController = {
       );
       const room = {
         ...get[0][0],
-        image: get[0][0].image || `${process.env.BASE_URL || 'https://localhost:5000'}/be-api/static/img/office1.jpg`
+        image: get[0][0].image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
       };
       res.status(200).send(room);
     } catch (error) {
@@ -346,8 +342,7 @@ const RoomController = {
         fs.renameSync(imageFile.filepath, newFilePath);
 
         // Store full URL instead of relative path
-        const baseUrl =
-          process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
+        const baseUrl = process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
         imagePath = `${baseUrl}/be-api/static/room_photo/${newFileName}`;
       }
 
@@ -424,10 +419,7 @@ const RoomController = {
       await client.beginTransaction();
 
       // Get current room data to check for existing image
-      const currentRoom = await client.query(
-        `SELECT image FROM mst_room WHERE id_ruangan = ?`,
-        [id]
-      );
+      const currentRoom = await client.query(`SELECT image FROM mst_room WHERE id_ruangan = ?`, [id]);
 
       // Handle image upload
       let imagePath = currentRoom[0][0]?.image; // Keep existing image by default
@@ -450,8 +442,7 @@ const RoomController = {
         fs.renameSync(imageFile.filepath, newFilePath);
 
         // Store full URL instead of relative path
-        const baseUrl =
-          process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
+        const baseUrl = process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
         imagePath = `${baseUrl}/be-api/static/room_photo/${newFileName}`;
       }
 
@@ -511,17 +502,14 @@ const RoomController = {
       // Check if room exists
       const Client = new DbConn();
       const client = await Client.initConnection();
-      
-      const roomCheck = await client.query(
-        `SELECT id_ruangan FROM mst_room WHERE id_ruangan = ?`,
-        [id_ruangan]
-      );
-      
+
+      const roomCheck = await client.query(`SELECT id_ruangan FROM mst_room WHERE id_ruangan = ?`, [id_ruangan]);
+
       if (roomCheck[0].length === 0) {
         client.release();
         return res.status(404).send({ message: "Room not found" });
       }
-      
+
       client.release();
 
       // Create QR code directory if it doesn't exist
@@ -531,20 +519,19 @@ const RoomController = {
 
       // Generate QR code with room ID
       await QRCode.toFile(qrCodePath, id_ruangan, {
-        errorCorrectionLevel: 'H',
-        type: 'png',
+        errorCorrectionLevel: "H",
+        type: "png",
         quality: 0.92,
         margin: 2,
         color: {
-          dark: '#000000',
-          light: '#FFFFFF'
+          dark: "#000000",
+          light: "#FFFFFF",
         },
-        width: 256
+        width: 256,
       });
 
       // Return the generated QR code as response
       res.sendFile(qrCodePath);
-      
     } catch (error) {
       console.error("Error generating QR code:", error);
       res.status(500).send({ message: error.message });
@@ -557,18 +544,18 @@ const RoomController = {
 
     try {
       const exists = fs.existsSync(qrCodePath);
-      
+
       if (exists) {
         const baseUrl = process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
         const qrCodeUrl = `${baseUrl}/be-api/static/qrcode/${id_ruangan}.png`;
-        res.status(200).send({ 
-          exists: true, 
-          qr_code_url: qrCodeUrl 
+        res.status(200).send({
+          exists: true,
+          qr_code_url: qrCodeUrl,
         });
       } else {
-        res.status(200).send({ 
-          exists: false, 
-          qr_code_url: null 
+        res.status(200).send({
+          exists: false,
+          qr_code_url: null,
         });
       }
     } catch (error) {
