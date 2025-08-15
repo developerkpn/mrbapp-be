@@ -1,5 +1,5 @@
 const webpush = require("web-push");
-const DbConn = require("../helper/DbTransaction");
+const NotificationModel = require("../models/NotificationModel");
 const cron = require("node-cron");
 
 function mapToArray(map) {
@@ -45,12 +45,9 @@ NotificationController.PushNotif = async (req, res) => {
 };
 
 NotificationController.PushMultiNotif = async (req, res) => {
-  const Client = new DbConn();
-  const client = await Client.initConnection();
   const userId = "ecbd2ab7-5512-43e4-a76c-6f3cd218db10";
   try {
-    const getNotifTrg = await client.query(`SELECT * FROM notif_sub WHERE id_user = ?`, [userId]);
-    const dataTarget = getNotifTrg[0];
+    const dataTarget = await NotificationModel.getNotificationTargets(userId);
     const promises = [];
     dataTarget.forEach((item) => {
       const subscription = {
@@ -61,12 +58,12 @@ NotificationController.PushMultiNotif = async (req, res) => {
         },
       };
       promises.push(
-        webpush.sendNotification(
+        NotificationModel.sendNotification(
           subscription,
-          JSON.stringify({
+          {
             title: "Hello Web Push",
             message: "Your web push notification is here!",
-          })
+          }
         )
       );
     });
@@ -75,8 +72,6 @@ NotificationController.PushMultiNotif = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).send(error);
-  } finally {
-    client.release();
   }
 };
 
