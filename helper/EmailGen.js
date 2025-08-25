@@ -4,7 +4,7 @@ const EmailGen = {};
 EmailGen.NotifyApproved = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-logo-2.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -49,7 +49,7 @@ EmailGen.NotifyApproved = (data) => {
 EmailGen.NotifyRejected = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-logo-2.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -96,7 +96,7 @@ EmailGen.NotifyRejected = (data) => {
 EmailGen.NewBookMail = (data, id_ticket) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-logo-2.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -149,7 +149,7 @@ EmailGen.NewBookMail = (data, id_ticket) => {
 EmailGen.EditBookMail = (data, id_ticket, id_book) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-logo-2.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -202,7 +202,7 @@ EmailGen.EditBookMail = (data, id_ticket, id_book) => {
 EmailGen.NotifyCancelled = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-logo-2.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -250,7 +250,7 @@ EmailGen.NotifyCancelled = (data) => {
 EmailGen.reminderMail = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-logo-2.png"
     width="40%"
     alt="KPN Corp"
   />
