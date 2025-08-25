@@ -18,18 +18,10 @@ router.get("/be-api/notif", Notif.PushMultiNotif);
 router.get("/be-api/notif/cron", Notif.GetNotifCron);
 router.get("/be-api/testcron", Example.cronTest);
 
-// router.use("/api", (req, res) => {
-//   res.status(200).send({
-//     message: "Connected",
-//   });
-// });
-
-router.get("/generate-uuid", (req, res) => {
+router.use("/be-api/healthcheck", (req, res) => {
   res.status(200).send({
-    message: uuid.uuid(),
+    message: "Connected",
   });
 });
-
-router.get("/api/example", Example.exampleMethod);
 
 module.exports = router;
