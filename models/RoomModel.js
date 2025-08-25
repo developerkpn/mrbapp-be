@@ -347,6 +347,28 @@ const RoomModel = {
     }
   },
 
+  updateRoomCapacity: async (id, kapasitas) => {
+    const Client = new DbConn();
+    const client = await Client.initConnection();
+
+    try {
+      await client.beginTransaction();
+      
+      await client.query(
+        `UPDATE mst_room SET kapasitas = ? WHERE id_ruangan = ?`,
+        [kapasitas, id]
+      );
+      
+      await client.commit();
+      return { success: true };
+    } catch (error) {
+      await client.rollback();
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
   checkRoomExists: async (id_ruangan) => {
     const Client = new DbConn();
     const client = await Client.initConnection();

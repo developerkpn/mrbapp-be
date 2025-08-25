@@ -16,6 +16,7 @@ router.post("/:id_ruangan/qrcode/generate", AdminCheck, RoomController.generateQ
 router.get("/:id_ruangan", RoomController.getRoomDetails);
 router.post("/", AdminCheck, RoomController.createRoom);
 router.put("/:id_ruangan", RoomController.updateRoom);
+router.patch("/:id_ruangan", AdminCheck, RoomController.editRoomLimited);
 router.delete("/:id_ruangan", AdminCheck, RoomController.deleteRoom);
 
 module.exports = router;

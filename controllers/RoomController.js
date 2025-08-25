@@ -368,6 +368,48 @@ const RoomController = {
     }
   },
 
+  editRoomLimited: async (req, res) => {
+    const id = req.params.id_ruangan;
+    
+    try {
+      const roomExists = await RoomModel.checkRoomExists(id);
+      
+      if (!roomExists) {
+        res.status(404).send({ message: "Room not found" });
+        return;
+      }
+      
+      const { kapasitas, facilities } = req.body;
+      
+      // Validate capacity
+      if (!kapasitas || isNaN(kapasitas) || kapasitas < 1) {
+        res.status(400).send({ message: "Valid capacity is required (minimum 1)" });
+        return;
+      }
+      
+      // Update only capacity in room table
+      const result = await RoomModel.updateRoomCapacity(id, parseInt(kapasitas));
+      
+      // Update facilities if provided
+      let facilityResult = null;
+      if (facilities && Array.isArray(facilities)) {
+        facilityResult = await FacilityModel.updateRoomFacilities(id, facilities);
+      }
+      
+      res.status(200).send({
+        message: "Room updated successfully",
+        capacity_updated: true,
+        facilities_updated: facilityResult ? {
+          added: facilityResult.added,
+          removed: facilityResult.removed,
+        } : null,
+      });
+    } catch (error) {
+      console.error("Error updating room:", error);
+      res.status(500).send({ message: error.message });
+    }
+  },
+
   getAllFacilities: async (req, res) => {
     try {
       const facilities = await FacilityModel.getAllFacilities();
