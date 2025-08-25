@@ -4,7 +4,7 @@ const EmailGen = {};
 EmailGen.NotifyApproved = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -49,7 +49,7 @@ EmailGen.NotifyApproved = (data) => {
 EmailGen.NotifyRejected = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -86,9 +86,7 @@ EmailGen.NotifyRejected = (data) => {
     </tr>
   </table>
   <p>Here's some note from administrator:</p>
-  <blockquote style="background: lightGray; padding: 16px">${
-    data.reject_note
-  }</blockquote>
+  <blockquote style="background: lightGray; padding: 16px">${data.reject_note}</blockquote>
   <p>Please create a new booking based on the note above</p>
   <hr />
   <p>Thank you.</p>
@@ -98,7 +96,7 @@ EmailGen.NotifyRejected = (data) => {
 EmailGen.NewBookMail = (data, id_ticket) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -142,9 +140,7 @@ EmailGen.NewBookMail = (data, id_ticket) => {
     </tr>
   </table>
   <br>
-  <a href="https://roomeet.gamasap.com/admin/approval/${
-    data.id_book
-  }">Click here to check details</a>
+  <a href="https://roomeet.gamasap.com/admin/approval/${data.id_book}">Click here to check details</a>
   <hr />
   <p>Thank you.</p>
 </main>`;
@@ -153,7 +149,7 @@ EmailGen.NewBookMail = (data, id_ticket) => {
 EmailGen.EditBookMail = (data, id_ticket, id_book) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -206,7 +202,7 @@ EmailGen.EditBookMail = (data, id_ticket, id_book) => {
 EmailGen.NotifyCancelled = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -243,9 +239,7 @@ EmailGen.NotifyCancelled = (data) => {
     </tr>
   </table>
   <p><strong>Cancellation reason:</strong></p>
-  <p style="color: #666; font-style: italic;">${
-    data.reject_note || "No reason provided"
-  }</p>
+  <p style="color: #666; font-style: italic;">${data.reject_note || "No reason provided"}</p>
   <p>We apologize for any inconvenience caused. If you believe this cancellation was made in error, please contact the administrator for assistance.</p>
   <p>You can create a new booking if needed through the Roomeet system.</p>
   <hr />
@@ -256,7 +250,7 @@ EmailGen.NotifyCancelled = (data) => {
 EmailGen.reminderMail = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -301,6 +295,5 @@ EmailGen.reminderMail = (data) => {
   <p>Thank you.</p>
 </main>`;
 };
-
 
 module.exports = EmailGen;

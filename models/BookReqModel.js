@@ -50,6 +50,7 @@ const BookReqModel = {
         agenda: data.agenda,
         prtcpt_ctr: data.participant,
         remark: data.remark,
+        company: data.company,
         category: data.category,
         id_book: id_book,
         is_active: "T",
@@ -159,6 +160,7 @@ const BookReqModel = {
         agenda: data.agenda,
         prtcpt_ctr: data.participant,
         remark: data.remark,
+        company: data.company,
         approval: "approved", // Keep as approved since no manual approval needed
         updated_at: data.updated_at,
         updated_by: data.id_user,
@@ -543,10 +545,6 @@ const BookReqModel = {
           req_book.approval = 'approved'
           AND
           req_book.book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
-          AND
-          CONVERT_TZ(CURTIME(), '+00:00', '+07:00') > req_book.time_start
-          AND
-          CONVERT_TZ(CURTIME(), '+00:00', '+07:00') < req_book.time_end + INTERVAL 15 MINUTE
         );
         `,
         [id_user]

@@ -148,7 +148,7 @@ const RoomModel = {
 
       const query = `SELECT mst_room.id_ruangan, mst_room.nama, mst_room.kapasitas, mst_room.is_virtual, mst_room.zoom_link, mst_room.zoom_meeting_id, mst_room.zoom_passcode FROM mst_room
           WHERE mst_room.kapasitas >= ?
-          AND mst_room.category = ?
+          AND (mst_room.category = ? OR mst_room.category = 'ALL')
 		      AND mst_room.is_active = 'T'
           ${virtualFilter}
           AND mst_room.id_ruangan NOT IN (

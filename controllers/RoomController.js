@@ -1,4 +1,5 @@
 const RoomModel = require("../models/RoomModel");
+const FacilityModel = require("../models/FacilityModel");
 const db = require("../config/db");
 const { formidable } = require("formidable");
 const fs = require("fs");
@@ -160,12 +161,27 @@ const RoomController = {
         imagePath = `${baseUrl}/be-api/static/room_photo/${newFileName}`;
       }
 
+      // Parse facility IDs (frontend sends comma-separated string)
+      let facilityIds = [];
+      if (fields.facilities && fields.facilities[0]) {
+        facilityIds = fields.facilities[0]
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0);
+      }
+
       const result = await RoomModel.createRoom(data, imagePath, generatedId);
+
+      // Add facilities for the new room
+      if (facilityIds.length > 0) {
+        await FacilityModel.updateRoomFacilities(generatedId, facilityIds);
+      }
 
       res.status(201).send({
         message: "Room created successfully",
         id_ruangan: result.id_ruangan,
         image_path: result.image_path,
+        facilities_added: facilityIds.length,
       });
     } catch (error) {
       console.error("Error creating room:", error);
@@ -244,11 +260,27 @@ const RoomController = {
         imagePath = `${baseUrl}/be-api/static/room_photo/${newFileName}`;
       }
 
+      // Parse facility IDs (frontend sends comma-separated string)
+      let facilityIds = [];
+      if (fields.facilities && fields.facilities[0]) {
+        facilityIds = fields.facilities[0]
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0);
+      }
+
       const result = await RoomModel.updateRoom(id, data, imagePath);
+
+      // Update facilities for the room
+      const facilityResult = await FacilityModel.updateRoomFacilities(id, facilityIds);
 
       res.status(200).send({
         message: "Room updated successfully",
         image_path: result.image_path,
+        facilities_updated: {
+          added: facilityResult.added,
+          removed: facilityResult.removed,
+        },
       });
     } catch (error) {
       console.error("Error updating room:", error);
@@ -332,6 +364,19 @@ const RoomController = {
       }
     } catch (error) {
       console.error("Error checking QR code:", error);
+      res.status(500).send({ message: error.message });
+    }
+  },
+
+  getAllFacilities: async (req, res) => {
+    try {
+      const facilities = await FacilityModel.getAllFacilities();
+      res.status(200).send({
+        message: "Success get all facilities",
+        data: facilities,
+      });
+    } catch (error) {
+      console.error("Error getting facilities:", error);
       res.status(500).send({ message: error.message });
     }
   },

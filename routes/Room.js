@@ -7,6 +7,7 @@ const AdminCheck = require("../middleware/admincheck");
 router.use(AuthToken);
 
 router.get("/", RoomController.getAllRoom);
+router.get("/facilities", RoomController.getAllFacilities);
 router.get("/fas", RoomController.getAllRoomWithFac);
 router.get("/avai", RoomController.getAvailableRoomWithParam);
 router.post("/search-avail", RoomController.getAvailableRoom);
