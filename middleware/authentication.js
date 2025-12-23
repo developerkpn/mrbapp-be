@@ -2,43 +2,41 @@ const jwt = require("jsonwebtoken");
 
 const AuthToken = async (req, res, next) => {
   let headers = req.headers.Authorization || req.headers.authorization;
-  let token = headers?.split(" ")[1];
-  let decode;
+
+  // Check if authorization header exists
   if (!(req.headers.authorization || req.headers.Authorization)) {
-    res.status(401).send({
+    return res.status(401).send({
       message: "Access Denied",
     });
-  } else {
-    try {
-      if (token !== undefined) {
-        decode = jwt.verify(token, process.env.TOKEN_KEY);
-      } else {
-        const exception = new Error();
-        exception.name = "Unauthorized";
-        exception.response = {
-          status: 401,
-          data: {
-            message: "Unauthorized",
-          },
-        };
-        throw exception;
-      }
-      req.useridSess = decode.id;
-      next();
-    } catch (err) {
-      if (err?.response?.status === 401) {
-        res.status(401).send({
-          message: err.response.data.message,
-        });
-      } else if (err.name == "TokenExpiredError") {
-        res.status(403).send({
-          message: err.message,
-        });
-      } else {
-        res.status(500).send({
-          message: err.stack,
-        });
-      }
+  }
+
+  let token = headers?.split(" ")[1];
+  let decode;
+
+  try {
+    if (token !== undefined) {
+      decode = jwt.verify(token, process.env.SECRETJWT);
+    } else {
+      return res.status(401).send({
+        message: "Unauthorized - Invalid token format",
+      });
+    }
+    req.useridSess = decode.id_user;
+    req.roleidSess = decode.role_id;
+    next();
+  } catch (err) {
+    if (err.name == "TokenExpiredError") {
+      res.status(403).send({
+        message: err.message,
+      });
+    } else if (err.name == "JsonWebTokenError") {
+      res.status(401).send({
+        message: "Unauthorized - Invalid token",
+      });
+    } else {
+      res.status(500).send({
+        message: err.stack,
+      });
     }
   }
 };

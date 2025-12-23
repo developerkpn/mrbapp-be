@@ -1,126 +1,62 @@
-const DbConn = require("../helper/DbTransaction");
+const RoomModel = require("../models/RoomModel");
+const FacilityModel = require("../models/FacilityModel");
 const db = require("../config/db");
+const { formidable } = require("formidable");
+const fs = require("fs");
+const path = require("path");
+const QRCode = require("qrcode");
 
 const RoomController = {
   getAllRoom: async (req, res) => {
-    const Client = new DbConn();
-    const client = await Client.initConnection();
+    const isVirtual = req.query.is_virtual;
     try {
-      const get = await client.query("SELECT * from mst_room");
-      const rooms = get[0];
+      const data = await RoomModel.getAllRooms(isVirtual);
+      const rooms = data.map((room) => ({
+        ...room,
+        image: room.image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
+      }));
       res.status(200).send(rooms);
     } catch (error) {
       console.error(error);
       res.status(500).send(error);
-    } finally {
-      client.release();
     }
   },
 
   getAllRoomWithFac: async (req, res) => {
-    const Client = new DbConn();
-    const client = await Client.initConnection();
     const id_room = req.query.id_room || null;
+    const isVirtual = req.query.is_virtual;
     try {
-      const getroom = await client.query(
-        `SELECT * from mst_room
-        LEFT JOIN mst_category
-          ON mst_room.category = mst_category.id_category
-        WHERE (id_ruangan = ? OR ? IS NULL)`,
-        [id_room, id_room]
-      );
-      const rooms = getroom[0];
-      let roomFac = [];
-      let promise = [];
-      rooms.forEach((item) => {
-        promise.push(
-          client.query(
-            `SELECT MF.nama from fas_room FR LEFT JOIN mst_fas MF
-        ON FR.id_fasilitas = MF.id_fasilitas 
-        WHERE id_ruangan = ?`,
-            item.id_ruangan
-          )
-        );
-      });
-      const dataGet = await Promise.all(promise);
-      rooms.forEach((item, index) => {
-        const fac = dataGet[index][0].map((item) => item.nama);
-        roomFac.push({ ...item, fasilitas: fac });
-      });
-      res.status(200).send({ data: roomFac });
+      const roomFac = await RoomModel.getAllRoomsWithFacilities(id_room, isVirtual);
+      const roomsWithImages = roomFac.map((item) => ({
+        ...item,
+        image: item.image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
+      }));
+      res.status(200).send({ data: roomsWithImages });
     } catch (error) {
       console.error(error);
       res.status(500).send({ message: error.message });
-    } finally {
-      client.release();
     }
   },
 
   getAvailableRoomWithParam: async (req, res) => {
-    const Client = new DbConn();
-    const client = await Client.initConnection();
-    // await Client.init();
     try {
       const hours = req.query.hours;
       if (hours === undefined) {
         throw Error("parameter is empty");
       }
-      const getroom = await client.query(
-        `SELECT 
-            id, 
-            id_ruangan, 
-            kapasitas, 
-            nama, 
-            lokasi,
-            image
-          FROM 
-            mst_room 
-          WHERE 
-            id_ruangan NOT IN (
-              SELECT 
-                id_ruangan 
-              FROM 
-                req_book 
-              WHERE 
-                (
-                  CONVERT_TZ(CURTIME(), '+00:00', '+07:00') BETWEEN time_start 
-                  AND time_end 
-                  OR DATE_ADD(CONVERT_TZ(NOW(), '+00:00', '+07:00'), INTERVAL ? HOUR) BETWEEN time_start 
-                  AND time_end 
-                  AND book_date = DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+07:00'), '%Y-%m-%d')
-                )
-            )
-        `,
-        [hours]
-      );
-      const rooms = getroom[0];
-      let roomFac = [];
-      let promise = [];
-      rooms.forEach((item) => {
-        promise.push(
-          client.query(`SELECT MF.nama from fas_room FR LEFT JOIN mst_fas MF
-          ON fr.id_fasilitas = MF.id_fasilitas 
-          WHERE id_ruangan = '${item.id_ruangan}'`)
-        );
-      });
-      const dataGet = await Promise.all(promise);
-      rooms.forEach((item, index) => {
-        const fac = dataGet[index][0].map((item) => item.nama);
-        roomFac.push({ ...item, fasilitas: fac });
-      });
-      res.status(200).send({ data: roomFac });
+      const roomFac = await RoomModel.getAvailableRoomsWithParam(hours);
+      const roomsWithImages = roomFac.map((item) => ({
+        ...item,
+        image: item.image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
+      }));
+      res.status(200).send({ data: roomsWithImages });
     } catch (error) {
       console.error(error);
       res.status(500).send({ message: error.message });
-    } finally {
-      client.release();
     }
   },
 
   getAvailableRoom: async (req, res) => {
-    const Client = new DbConn();
-    const client = await Client.initConnection();
-
     const data = req.body.data;
     // const dateBook = new Date
 
@@ -131,80 +67,359 @@ const RoomController = {
       prtcpt_ctr: data.participant,
       category: data.category,
       id_book: data.id_book ? data.id_book : "",
+      is_virtual: data.is_virtual !== undefined ? (data.is_virtual === true ? "T" : "F") : null,
     };
 
-    console.log(payload);
-
     try {
-      await client.beginTransaction();
-      const getRoom = await client.query(
-        `SELECT mst_room.id_ruangan, mst_room.nama, mst_room.kapasitas FROM mst_room
-          WHERE mst_room.kapasitas >= ?
-          AND mst_room.category = ?
-		      AND mst_room.is_active = 'T'
-          AND mst_room.id_ruangan NOT IN (
-            SELECT distinct req_book.id_ruangan
-            FROM 
-					  req_book
-            WHERE
-					  req_book.book_date = ?
-					  AND IF (? = "", req_book.is_active = 'T', false)
-					  AND (
-              (req_book.time_start < ? AND req_book.time_end > ?)
-					  )
-          )
-          ORDER BY mst_room.kapasitas`,
-        [
-          payload.prtcpt_ctr,
-          payload.category,
-          payload.book_date,
-          payload.id_book,
-          payload.time_end,
-          payload.time_start,
-        ]
-      );
-      await client.commit();
+      const rooms = await RoomModel.getAvailableRooms(payload);
+
+      // Add placeholder image for rooms without images and ensure consistent data
+      const roomsWithPlaceholder = rooms.map((room) => ({
+        ...room,
+        image: room.image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
+        nama: room.nama || "Room Name",
+        lokasi: room.lokasi || "Location",
+        is_virtual_display: room.is_virtual === "T" ? "Virtual" : "Physical",
+        room_type_badge: room.is_virtual === "T" ? "virtual" : "physical",
+      }));
+
       res.status(200).send({
         message: "Success get avail room",
-        data: getRoom[0],
+        data: roomsWithPlaceholder,
       });
     } catch (error) {
-      await client.rollback();
       console.log(error);
       res.status(500).send({ message: error.message });
-    } finally {
-      client.release();
     }
   },
 
   getRoomDetails: async (req, res) => {
-    const Client = new DbConn();
-    const client = await Client.initConnection();
     const id = req.params.id_ruangan;
     try {
-      const get = await client.query(
-        `SELECT
-          mst_fas.nama AS fasilitas,
-          mst_room.*,
-          mst_category.*,
-          fas_room.*
-        FROM mst_room
-        LEFT JOIN mst_category
-          ON mst_room.category = mst_category.id_category
-        LEFT JOIN fas_room
-          ON mst_room.id_ruangan = fas_room.id_ruangan
-        LEFT JOIN mst_fas
-          on fas_room.id_fasilitas = mst_fas.id_fasilitas
-        WHERE mst_room.id_ruangan = ?`,
-        [id]
-      );
-      const room = get[0][0];
+      const roomData = await RoomModel.getRoomDetails(id);
+      const room = {
+        ...roomData,
+        image: roomData.image || `${process.env.BASE_URL || "https://localhost:5000"}/be-api/static/img/office1.jpg`,
+      };
       res.status(200).send(room);
     } catch (error) {
       console.error(error);
       res.status(500).send(error);
-    } finally {
-      client.release();
+    }
+  },
+
+  createRoom: async (req, res) => {
+    try {
+      // Create upload directory if it doesn't exist
+      const uploadDir = path.join(__dirname, "../public/room_photo");
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      // Parse the form data
+      const form = formidable({
+        uploadDir: uploadDir,
+        keepExtensions: true,
+        maxFileSize: 10 * 1024 * 1024, // 10MB limit
+        filter: ({ mimetype }) => {
+          // Only allow image files
+          return mimetype && mimetype.includes("image");
+        },
+      });
+
+      const [fields, files] = await form.parse(req);
+
+      // Extract field values (formidable returns arrays)
+      const data = {
+        nama: fields.nama?.[0],
+        kapasitas: parseInt(fields.kapasitas?.[0]),
+        lokasi: fields.lokasi?.[0],
+        category: fields.category?.[0],
+        is_active: fields.is_active?.[0] || "T",
+        is_virtual: fields.is_virtual?.[0] || "F",
+        zoom_link: fields.zoom_link?.[0] || null,
+        zoom_meeting_id: fields.zoom_meeting_id?.[0] || null,
+        zoom_passcode: fields.zoom_passcode?.[0] || null,
+      };
+
+      // Generate automatic room ID
+      const generatedId = await RoomModel.generateRoomId(data);
+
+      // Handle image upload
+      let imagePath = null;
+      if (files.image && files.image[0]) {
+        const imageFile = files.image[0];
+        const fileExtension = path.extname(imageFile.originalFilename);
+        const newFileName = `${generatedId}${fileExtension}`;
+        const newFilePath = path.join(uploadDir, newFileName);
+
+        // Move the uploaded file to the final location with room ID as filename
+        fs.renameSync(imageFile.filepath, newFilePath);
+
+        // Store full URL instead of relative path
+        const baseUrl = process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
+        imagePath = `${baseUrl}/be-api/static/room_photo/${newFileName}`;
+      }
+
+      // Parse facility IDs (frontend sends comma-separated string)
+      let facilityIds = [];
+      if (fields.facilities && fields.facilities[0]) {
+        facilityIds = fields.facilities[0]
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0);
+      }
+
+      const result = await RoomModel.createRoom(data, imagePath, generatedId);
+
+      // Add facilities for the new room
+      if (facilityIds.length > 0) {
+        await FacilityModel.updateRoomFacilities(generatedId, facilityIds);
+      }
+
+      res.status(201).send({
+        message: "Room created successfully",
+        id_ruangan: result.id_ruangan,
+        image_path: result.image_path,
+        facilities_added: facilityIds.length,
+      });
+    } catch (error) {
+      console.error("Error creating room:", error);
+      res.status(500).send({ message: error.message });
+    }
+  },
+
+  updateRoom: async (req, res) => {
+    const id = req.params.id_ruangan;
+
+    try {
+      const roomExists = await RoomModel.checkRoomExists(id);
+
+      if (!roomExists) {
+        res.status(404).send({ message: "Room not found" });
+        return;
+      }
+
+      // Create upload directory if it doesn't exist
+      const uploadDir = path.join(__dirname, "../public/room_photo");
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      // Parse the form data
+      const form = formidable({
+        uploadDir: uploadDir,
+        keepExtensions: true,
+        maxFileSize: 10 * 1024 * 1024, // 10MB limit
+        filter: ({ mimetype }) => {
+          // Only allow image files
+          return mimetype && mimetype.includes("image");
+        },
+      });
+
+      const [fields, files] = await form.parse(req);
+
+      // Extract field values (formidable returns arrays)
+      const data = {
+        nama: fields.nama?.[0],
+        kapasitas: parseInt(fields.kapasitas?.[0]),
+        lokasi: fields.lokasi?.[0],
+        category: fields.category?.[0],
+        is_active: fields.is_active?.[0] || "T",
+        is_virtual: fields.is_virtual?.[0] || "F",
+        zoom_link: fields.zoom_link?.[0] || null,
+        zoom_meeting_id: fields.zoom_meeting_id?.[0] || null,
+        zoom_passcode: fields.zoom_passcode?.[0] || null,
+      };
+
+      // Get current room data to check for existing image
+      const currentImagePath = await RoomModel.getCurrentRoomImage(id);
+
+      // Handle image upload
+      let imagePath = currentImagePath; // Keep existing image by default
+      if (files.image && files.image[0]) {
+        // Delete old image if it exists and is a local file
+        if (imagePath && imagePath.includes("/be-api/static/room_photo/")) {
+          const fileName = imagePath.split("/").pop();
+          const oldImagePath = path.join(uploadDir, fileName);
+          if (fs.existsSync(oldImagePath)) {
+            fs.unlinkSync(oldImagePath);
+          }
+        }
+
+        const imageFile = files.image[0];
+        const fileExtension = path.extname(imageFile.originalFilename);
+        const newFileName = `${id}${fileExtension}`;
+        const newFilePath = path.join(uploadDir, newFileName);
+
+        // Move the uploaded file to the final location with room ID as filename
+        fs.renameSync(imageFile.filepath, newFilePath);
+
+        // Store full URL instead of relative path
+        const baseUrl = process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
+        imagePath = `${baseUrl}/be-api/static/room_photo/${newFileName}`;
+      }
+
+      // Parse facility IDs (frontend sends comma-separated string)
+      let facilityIds = [];
+      if (fields.facilities && fields.facilities[0]) {
+        facilityIds = fields.facilities[0]
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0);
+      }
+
+      const result = await RoomModel.updateRoom(id, data, imagePath);
+
+      // Update facilities for the room
+      const facilityResult = await FacilityModel.updateRoomFacilities(id, facilityIds);
+
+      res.status(200).send({
+        message: "Room updated successfully",
+        image_path: result.image_path,
+        facilities_updated: {
+          added: facilityResult.added,
+          removed: facilityResult.removed,
+        },
+      });
+    } catch (error) {
+      console.error("Error updating room:", error);
+      res.status(500).send({ message: error.message });
+    }
+  },
+
+  deleteRoom: async (req, res) => {
+    const id = req.params.id_ruangan;
+    try {
+      const roomExists = await RoomModel.checkRoomExists(id);
+      if (!roomExists) {
+        res.status(404).send({ message: "Room not found" });
+        return;
+      }
+      await RoomModel.deleteRoom(id);
+      res.status(200).send({ message: "Room deleted" });
+    } catch (error) {
+      res.status(500).send({ message: error.message });
+    }
+  },
+
+  generateQRCode: async (req, res) => {
+    const id_ruangan = req.params.id_ruangan;
+    const qrCodeDir = path.join(__dirname, "../public/qrcode");
+    const qrCodePath = path.join(qrCodeDir, `${id_ruangan}.png`);
+
+    try {
+      // Check if room exists
+      const roomExists = await RoomModel.checkRoomExists(id_ruangan);
+
+      if (!roomExists) {
+        return res.status(404).send({ message: "Room not found" });
+      }
+
+      // Create QR code directory if it doesn't exist
+      if (!fs.existsSync(qrCodeDir)) {
+        fs.mkdirSync(qrCodeDir, { recursive: true });
+      }
+
+      // Generate QR code with room ID
+      await QRCode.toFile(qrCodePath, id_ruangan, {
+        errorCorrectionLevel: "H",
+        type: "png",
+        quality: 0.92,
+        margin: 2,
+        color: {
+          dark: "#000000",
+          light: "#FFFFFF",
+        },
+        width: 256,
+      });
+
+      // Return the generated QR code as response
+      res.sendFile(qrCodePath);
+    } catch (error) {
+      console.error("Error generating QR code:", error);
+      res.status(500).send({ message: error.message });
+    }
+  },
+
+  checkQRCodeExists: async (req, res) => {
+    const id_ruangan = req.params.id_ruangan;
+    const qrCodePath = path.join(__dirname, "../public/qrcode", `${id_ruangan}.png`);
+
+    try {
+      const exists = fs.existsSync(qrCodePath);
+
+      if (exists) {
+        const baseUrl = process.env.BASE_URL || `https://localhost:${process.env.PORT}`;
+        const qrCodeUrl = `${baseUrl}/be-api/static/qrcode/${id_ruangan}.png`;
+        res.status(200).send({
+          exists: true,
+          qr_code_url: qrCodeUrl,
+        });
+      } else {
+        res.status(200).send({
+          exists: false,
+          qr_code_url: null,
+        });
+      }
+    } catch (error) {
+      console.error("Error checking QR code:", error);
+      res.status(500).send({ message: error.message });
+    }
+  },
+
+  editRoomLimited: async (req, res) => {
+    const id = req.params.id_ruangan;
+    
+    try {
+      const roomExists = await RoomModel.checkRoomExists(id);
+      
+      if (!roomExists) {
+        res.status(404).send({ message: "Room not found" });
+        return;
+      }
+      
+      const { kapasitas, facilities } = req.body;
+      
+      // Validate capacity
+      if (!kapasitas || isNaN(kapasitas) || kapasitas < 1) {
+        res.status(400).send({ message: "Valid capacity is required (minimum 1)" });
+        return;
+      }
+      
+      // Update only capacity in room table
+      const result = await RoomModel.updateRoomCapacity(id, parseInt(kapasitas));
+      
+      // Update facilities if provided
+      let facilityResult = null;
+      if (facilities && Array.isArray(facilities)) {
+        facilityResult = await FacilityModel.updateRoomFacilities(id, facilities);
+      }
+      
+      res.status(200).send({
+        message: "Room updated successfully",
+        capacity_updated: true,
+        facilities_updated: facilityResult ? {
+          added: facilityResult.added,
+          removed: facilityResult.removed,
+        } : null,
+      });
+    } catch (error) {
+      console.error("Error updating room:", error);
+      res.status(500).send({ message: error.message });
+    }
+  },
+
+  getAllFacilities: async (req, res) => {
+    try {
+      const facilities = await FacilityModel.getAllFacilities();
+      res.status(200).send({
+        message: "Success get all facilities",
+        data: facilities,
+      });
+    } catch (error) {
+      console.error("Error getting facilities:", error);
+      res.status(500).send({ message: error.message });
     }
   },
 };

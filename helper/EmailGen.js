@@ -4,7 +4,7 @@ const EmailGen = {};
 EmailGen.NotifyApproved = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -21,7 +21,7 @@ EmailGen.NotifyApproved = (data) => {
     </tr>
     <tr>
       <td style="width:25%">Remark</td>
-      <td>${data.remark}</td>
+      <td>${data.remark || "-"}</td>
     </tr>
     <tr>
       <td style="width:25%">Room</td>
@@ -49,7 +49,7 @@ EmailGen.NotifyApproved = (data) => {
 EmailGen.NotifyRejected = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -66,7 +66,7 @@ EmailGen.NotifyRejected = (data) => {
     </tr>
     <tr>
       <td style="width:25%">Remark</td>
-      <td>${data.remark}</td>
+      <td>${data.remark || "-"}</td>
     </tr>
     <tr>
       <td style="width:25%">Room</td>
@@ -96,7 +96,7 @@ EmailGen.NotifyRejected = (data) => {
 EmailGen.NewBookMail = (data, id_ticket) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -140,9 +140,7 @@ EmailGen.NewBookMail = (data, id_ticket) => {
     </tr>
   </table>
   <br>
-  <a href="https://roomeet.gamasap.com/admin/approval/${
-    data.id_book
-  }">Click here to check details</a>
+  <a href="https://roomeet.gamasap.com/admin/approval/${data.id_book}">Click here to check details</a>
   <hr />
   <p>Thank you.</p>
 </main>`;
@@ -151,7 +149,7 @@ EmailGen.NewBookMail = (data, id_ticket) => {
 EmailGen.EditBookMail = (data, id_ticket, id_book) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />
@@ -201,10 +199,58 @@ EmailGen.EditBookMail = (data, id_ticket, id_book) => {
 </main>`;
 };
 
+EmailGen.NotifyCancelled = (data) => {
+  return `<main style="font-family: sans-serif">
+  <img
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
+    width="40%"
+    alt="KPN Corp"
+  />
+  <h1>Roomeet</h1>
+  <p>Hello, ${data.username}</p>
+  <p>
+    Your booking, <strong>"${data.agenda}"</strong> has been
+    <strong style="color: red">${data.approval}</strong> by the administrator.
+  </p>
+  <table style="width: 100%">
+    <tr>
+      <td style="width:25%">Agenda</td>
+      <td>${data.agenda}</td>
+    </tr>
+    <tr>
+      <td style="width:25%">Remark</td>
+      <td>${data.remark || "-"}</td>
+    </tr>
+    <tr>
+      <td style="width:25%">Room</td>
+      <td>${data.ruangan}</td>
+    </tr>
+    <tr>
+      <td style="width:25%">Booking Date</td>
+      <td>${moment(data.book_date).format("DD-MM-YYYY")}</td>
+    </tr>
+    <tr>
+      <td style="width:25%">Time</td>
+      <td>${data.time_start} - ${data.time_end}</td>
+    </tr>
+    <tr>
+      <td style="width:25%">Participants</td>
+      <td>${data.capacity}</td>
+    </tr>
+  </table>
+  <p><strong>Cancellation reason:</strong></p>
+  <p style="color: #666; font-style: italic;">${data.reject_note || "No reason provided"}</p>
+  <p>We apologize for any inconvenience caused. If you believe this cancellation was made in error, please contact the administrator for assistance.</p>
+  <p>You can create a new booking if needed through the Roomeet system.</p>
+  <hr />
+  <p>Thank you.</p>
+</main>`;
+};
+
 EmailGen.reminderMail = (data) => {
   return `<main style="font-family: sans-serif">
   <img
-    src="https://safetyfirstindonesia.co.id/assets/uploads/images/9f09b-kpn-corp.png"
+    src="${process.env.BASE_URL}/be-api/static/img/kpn-corp.png"
     width="40%"
     alt="KPN Corp"
   />

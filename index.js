@@ -1,5 +1,6 @@
-const dotenv = require("dotenv").config({
-  path: `./.env.${process.env.NODE_ENV}`,
+const dotenv = require("dotenv");
+dotenv.config({
+  path: `./${process.env.NODE_ENV}.env`,
 });
 const express = require("express");
 const os = require("os");
@@ -30,8 +31,8 @@ const corsOption = {
 };
 
 const servOption = {
-  cert: fs.readFileSync("./ssl/cert.pem"),
-  key: fs.readFileSync("./ssl/key.pem"),
+  cert: fs.readFileSync("./ssl/localhost.pem"),
+  key: fs.readFileSync("./ssl/localhost-key.pem"),
 };
 
 app.use(credentials);
@@ -49,6 +50,6 @@ NotificationManager.CleanUpCron();
 //   console.log(`App running on ${process.env.PORT}`);
 // });
 
-const server = https.createServer(servOption, app).listen(port, () => {
+const server = https.createServer(servOption, app).listen(port, "0.0.0.0", () => {
   console.log(`App running on ${port}`);
 });
